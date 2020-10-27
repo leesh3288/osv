@@ -29,6 +29,8 @@
 
 #define LOOP 10000000000ULL
 
+typedef std::chrono::time_point<std::chrono::system_clock> tp_t;
+
 void _loop(int iterations)
 {
     for (register int i=0; i<iterations; i++) {
@@ -50,7 +52,8 @@ void ticket_test(u64 loop, std::vector<ticket_t> ts)
     std::vector<std::thread> threads;
     std::atomic<int> ended {0}, waiting {0};
     volatile bool go = false;
-    std::vector<std::pair<ticket_t, float>> results;
+    std::vector<std::pair<ticket_t, tp_t>> results;
+    auto start = std::chrono::system_clock::now();  // just for auto-type, will be set again later
     
     mutex mtx, cv_mtx;
     condvar cv;
@@ -72,14 +75,12 @@ void ticket_test(u64 loop, std::vector<ticket_t> ts)
             mutex_unlock(&cv_mtx);
 
             u64 val = 0;
-            auto start = std::chrono::system_clock::now();
             for (u64 i = 1; i <= loop; i++) {
                 val *= i;
             }
-            auto end = std::chrono::system_clock::now();
-            std::chrono::duration<float> len = end - start;
+            tp_t end = std::chrono::system_clock::now();
             WITH_LOCK (mtx) {
-                results.emplace_back(t, len.count());
+                results.emplace_back(t, end);
             }
             ended++;
 
@@ -102,6 +103,9 @@ void ticket_test(u64 loop, std::vector<ticket_t> ts)
     // this must be done with ticket_infinity to flush all threads into ready list.
     cv.wake_all();
 
+    // mark starting time for all threads
+    start = std::chrono::system_clock::now();
+
     // now reduce ticket to original
     sched::thread::current()->set_ticket(tester_ticket);
 
@@ -114,8 +118,10 @@ void ticket_test(u64 loop, std::vector<ticket_t> ts)
             minlen = x.second;
         }
     }
+    std::chrono::duration<float> mind = minlen - start;
     for (auto x: results) {
-        std::cout << "Ticket #" << x.first << ": " << x.second << "s (x" << (x.second / minlen) << ")\n";
+        std::chrono::duration<float> d = x.second - start;
+        std::cout << "Ticket #" << x.first << ": " << d.count() << "s (x" << (d.count() / mind.count()) << ")\n";
     }
     std::cout << "Ticket test done\n";
 }
