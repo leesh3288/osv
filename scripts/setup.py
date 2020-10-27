@@ -238,7 +238,7 @@ class Ubuntu(object):
                 'maven',
                 'openssl',
                 'p11-kit',
-                'python3-dpkt',
+                #'python3-dpkt',
                 'python3-requests',
                 'qemu-system-x86',
                 'qemu-utils',

@@ -121,6 +121,8 @@ static constexpr runtime_t inf = std::numeric_limits<runtime_t>::infinity();
 mutex cpu::notifier::_mtx;
 std::list<cpu::notifier*> cpu::notifier::_notifiers __attribute__((init_priority((int)init_prio::notifiers)));
 
+static std::mt19937_64 rng;
+
 }
 
 #include "arch-switch.hh"
@@ -164,6 +166,7 @@ void cpu::init_idle_thread()
     std::string name = osv::sprintf("idle%d", id);
     idle_thread = thread::make([this] { idle(); }, thread::attr().pin(this).name(name));
     idle_thread->set_priority(thread::priority_idle);
+    idle_thread->set_ticket(thread::ticket_idle);
 }
 
 // Estimating a *running* thread's total cpu usage (in thread::thread_clock())
@@ -254,25 +257,14 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
     p->_total_cpu_time += interval;
     p->_runtime.ran_for(interval);
 
+    // Lottery scheduling implementation.
+
     if (p_status == thread::status::running) {
-        // The current thread is still runnable. Check if it still has the
-        // lowest runtime, and update the timer until the next thread's turn.
         if (runqueue.empty()) {
             preemption_timer.cancel();
             return;
-        } else if (!called_from_yield) {
-            auto &t = *runqueue.begin();
-            if (p->_runtime.get_local() < t._runtime.get_local()) {
-                preemption_timer.cancel();
-                auto delta = p->_runtime.time_until(t._runtime.get_local());
-                if (delta > 0) {
-                    preemption_timer.set(now + delta);
-                }
-                return;
-            }
         }
-        // If we're here, p no longer has the lowest runtime. Before queuing
-        // p, return the runtime it borrowed for hysteresis.
+
         p->_runtime.hysteresis_run_stop();
         p->_detached_state->st.store(thread::status::queued);
 
@@ -283,14 +275,33 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
         trace_sched_preempt();
         p->stat_preemptions.incr();
     } else {
-        // p is no longer running, so we'll switch to a different thread.
-        // Return the runtime p borrowed for hysteresis.
         p->_runtime.hysteresis_run_stop();
     }
 
-    auto ni = runqueue.begin();
+    /// Lottery
+    assert(runqueue.size() > 0);
+
+    u64 ticket_sum = 0;
+    for (auto iter = runqueue.begin(); iter != runqueue.end(); iter++) {
+        ticket_sum += iter->ticket();
+    }
+    u64 lottery = std::uniform_int_distribution<u64>(0, ticket_sum - 1)(rng);
+    bool ni_sel = false;
+    auto ni = runqueue.begin();  // just for auto
+    for (auto iter = runqueue.begin(); iter != runqueue.end(); iter++) {
+        if (iter->ticket() > lottery) {
+            ni = iter;
+            ni_sel = true;
+            break;
+        } else {
+            lottery -= iter->ticket();
+        }
+    }
+    assert(ni_sel);
     auto n = &*ni;
     runqueue.erase(ni);
+    ///
+
     n->cputime_estimator_set(now, n->_total_cpu_time);
     assert(n->_detached_state->st.load() == thread::status::queued);
     trace_sched_switch(n, p->_runtime.get_local(), n->_runtime.get_local());
@@ -311,7 +322,12 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
     n->_detached_state->st.store(thread::status::running);
     n->_runtime.hysteresis_run_start();
 
-    assert(n!=p);
+    // next to run == currently running, set preemption timer & continue
+    if (n == p) {
+        preemption_timer.cancel();
+        preemption_timer.set(now + preempt_after);
+        return;
+    }
 
     if (p->_detached_state->st.load(std::memory_order_relaxed) == thread::status::queued
             && p != idle_thread) {
@@ -320,11 +336,7 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
     preemption_timer.cancel();
     if (!called_from_yield) {
         if (!runqueue.empty()) {
-            auto& t = *runqueue.begin();
-            auto delta = n->_runtime.time_until(t._runtime.get_local());
-            if (delta > 0) {
-                preemption_timer.set(now + delta);
-            }
+            preemption_timer.set(now + preempt_after);
         }
     } else {
         preemption_timer.set(now + preempt_after);
@@ -763,6 +775,16 @@ void thread::yield(thread_runtime::duration preempt_after)
     cpu::current()->reschedule_from_interrupt(true, preempt_after);
 }
 
+void thread::set_ticket(ticket_t ticket)
+{
+    _runtime.set_ticket(ticket);
+}
+
+ticket_t thread::ticket() const
+{
+    return _runtime.ticket();
+}
+
 void thread::set_priority(float priority)
 {
     _runtime.set_priority(priority);
@@ -910,7 +932,7 @@ void* thread::do_remote_thread_local_var(void* var)
 
 thread::thread(std::function<void ()> func, attr attr, bool main, bool app)
     : _func(func)
-    , _runtime(thread::priority_default)
+    , _runtime(thread::priority_default, thread::ticket_default)
     , _detached_state(new detached_state(this))
     , _attr(attr)
     , _migration_lock_counter(0)

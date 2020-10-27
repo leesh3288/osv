@@ -26,8 +26,10 @@
 #include <osv/clock.hh>
 #include <osv/timer-set.hh>
 #include <string.h>
+#include <random>
 
 typedef float runtime_t;
+typedef u32 ticket_t;
 
 extern "C" {
 void smp_main();
@@ -287,13 +289,22 @@ public:
         return _priority;
     }
 
+    void set_ticket(ticket_t ticket) {
+        _ticket = ticket;
+    }
+
+    ticket_t ticket() const {
+        return _ticket;
+    }
+
     // When _Rtt=0, multiplicative normalization doesn't matter, so it doesn't
     // matter what we set for _renormalize_count. We can't set it properly
     // in the constructor (it doesn't run from the scheduler, or know which
     // CPU's counter to copy), so we'll fix it in ran_for().
-    constexpr thread_runtime(runtime_t priority) :
+    constexpr thread_runtime(runtime_t priority, ticket_t ticket) :
             _priority(priority),
-            _Rtt(0), _renormalize_count(-1) { };
+            _Rtt(0), _renormalize_count(-1),
+            _ticket(ticket) { };
 
 private:
     runtime_t _priority;            // p in the document
@@ -301,6 +312,8 @@ private:
     // If _renormalize_count == -1, it means the runtime is global
     // (i.e., export_runtime() was called, or this is a new thread).
     int _renormalize_count;
+
+    ticket_t _ticket;
 };
 
 // "tau" controls the length of the history we consider for scheduling,
@@ -592,6 +605,14 @@ public:
       * wait queue for) a crucial mutex (e.g., for I/O or memory allocation),
       * which could cause the whole system to block. So use at your own peril.
       */
+    /**
+     * Set/Get thread's tickets
+     */
+    void set_ticket(ticket_t ticket);
+    static constexpr ticket_t ticket_idle = 1;
+    static constexpr ticket_t ticket_default = 100;
+    static constexpr ticket_t ticket_infinity = std::numeric_limits<ticket_t>::max();
+    ticket_t ticket() const;
     bool unsafe_stop();
     void setup_large_syscall_stack();
     void free_tiny_syscall_stack();

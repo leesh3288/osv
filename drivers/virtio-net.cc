@@ -249,6 +249,7 @@ net::net(virtio_device& dev)
     sched::thread* poll_task = _rxq.poll_task.get();
 
     poll_task->set_priority(sched::thread::priority_infinity);
+    poll_task->set_ticket(sched::thread::ticket_infinity);
 
     // Please look at the section 5.1.6.1 of virtio specification for explanation
     if (_dev.is_modern()) {
