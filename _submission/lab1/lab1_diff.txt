@@ -1,0 +1,397 @@
+diff --git a/core/sched.cc b/core/sched.cc
+index 06f849d1..56d1cacc 100644
+--- a/core/sched.cc
++++ b/core/sched.cc
+@@ -121,6 +121,8 @@ static constexpr runtime_t inf = std::numeric_limits<runtime_t>::infinity();
+ mutex cpu::notifier::_mtx;
+ std::list<cpu::notifier*> cpu::notifier::_notifiers __attribute__((init_priority((int)init_prio::notifiers)));
+ 
++static std::mt19937_64 rng;
++
+ }
+ 
+ #include "arch-switch.hh"
+@@ -164,6 +166,7 @@ void cpu::init_idle_thread()
+     std::string name = osv::sprintf("idle%d", id);
+     idle_thread = thread::make([this] { idle(); }, thread::attr().pin(this).name(name));
+     idle_thread->set_priority(thread::priority_idle);
++    idle_thread->set_ticket(thread::ticket_idle);
+ }
+ 
+ // Estimating a *running* thread's total cpu usage (in thread::thread_clock())
+@@ -254,25 +257,14 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
+     p->_total_cpu_time += interval;
+     p->_runtime.ran_for(interval);
+ 
++    // Lottery scheduling implementation.
++
+     if (p_status == thread::status::running) {
+-        // The current thread is still runnable. Check if it still has the
+-        // lowest runtime, and update the timer until the next thread's turn.
+         if (runqueue.empty()) {
+             preemption_timer.cancel();
+             return;
+-        } else if (!called_from_yield) {
+-            auto &t = *runqueue.begin();
+-            if (p->_runtime.get_local() < t._runtime.get_local()) {
+-                preemption_timer.cancel();
+-                auto delta = p->_runtime.time_until(t._runtime.get_local());
+-                if (delta > 0) {
+-                    preemption_timer.set(now + delta);
+-                }
+-                return;
+-            }
+         }
+-        // If we're here, p no longer has the lowest runtime. Before queuing
+-        // p, return the runtime it borrowed for hysteresis.
++
+         p->_runtime.hysteresis_run_stop();
+         p->_detached_state->st.store(thread::status::queued);
+ 
+@@ -283,14 +275,33 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
+         trace_sched_preempt();
+         p->stat_preemptions.incr();
+     } else {
+-        // p is no longer running, so we'll switch to a different thread.
+-        // Return the runtime p borrowed for hysteresis.
+         p->_runtime.hysteresis_run_stop();
+     }
+ 
+-    auto ni = runqueue.begin();
++    /// Lottery
++    assert(runqueue.size() > 0);
++
++    u64 ticket_sum = 0;
++    for (auto iter = runqueue.begin(); iter != runqueue.end(); iter++) {
++        ticket_sum += iter->ticket();
++    }
++    u64 lottery = std::uniform_int_distribution<u64>(0, ticket_sum - 1)(rng);
++    bool ni_sel = false;
++    auto ni = runqueue.begin();  // just for auto
++    for (auto iter = runqueue.begin(); iter != runqueue.end(); iter++) {
++        if (iter->ticket() > lottery) {
++            ni = iter;
++            ni_sel = true;
++            break;
++        } else {
++            lottery -= iter->ticket();
++        }
++    }
++    assert(ni_sel);
+     auto n = &*ni;
+     runqueue.erase(ni);
++    ///
++
+     n->cputime_estimator_set(now, n->_total_cpu_time);
+     assert(n->_detached_state->st.load() == thread::status::queued);
+     trace_sched_switch(n, p->_runtime.get_local(), n->_runtime.get_local());
+@@ -311,7 +322,12 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
+     n->_detached_state->st.store(thread::status::running);
+     n->_runtime.hysteresis_run_start();
+ 
+-    assert(n!=p);
++    // next to run == currently running, set preemption timer & continue
++    if (n == p) {
++        preemption_timer.cancel();
++        preemption_timer.set(now + preempt_after);
++        return;
++    }
+ 
+     if (p->_detached_state->st.load(std::memory_order_relaxed) == thread::status::queued
+             && p != idle_thread) {
+@@ -320,11 +336,7 @@ void cpu::reschedule_from_interrupt(bool called_from_yield,
+     preemption_timer.cancel();
+     if (!called_from_yield) {
+         if (!runqueue.empty()) {
+-            auto& t = *runqueue.begin();
+-            auto delta = n->_runtime.time_until(t._runtime.get_local());
+-            if (delta > 0) {
+-                preemption_timer.set(now + delta);
+-            }
++            preemption_timer.set(now + preempt_after);
+         }
+     } else {
+         preemption_timer.set(now + preempt_after);
+@@ -763,6 +775,16 @@ void thread::yield(thread_runtime::duration preempt_after)
+     cpu::current()->reschedule_from_interrupt(true, preempt_after);
+ }
+ 
++void thread::set_ticket(ticket_t ticket)
++{
++    _runtime.set_ticket(ticket);
++}
++
++ticket_t thread::ticket() const
++{
++    return _runtime.ticket();
++}
++
+ void thread::set_priority(float priority)
+ {
+     _runtime.set_priority(priority);
+@@ -910,7 +932,7 @@ void* thread::do_remote_thread_local_var(void* var)
+ 
+ thread::thread(std::function<void ()> func, attr attr, bool main, bool app)
+     : _func(func)
+-    , _runtime(thread::priority_default)
++    , _runtime(thread::priority_default, thread::ticket_default)
+     , _detached_state(new detached_state(this))
+     , _attr(attr)
+     , _migration_lock_counter(0)
+diff --git a/drivers/virtio-net.cc b/drivers/virtio-net.cc
+index 31a32684..40e8ff87 100644
+--- a/drivers/virtio-net.cc
++++ b/drivers/virtio-net.cc
+@@ -249,6 +249,7 @@ net::net(virtio_device& dev)
+     sched::thread* poll_task = _rxq.poll_task.get();
+ 
+     poll_task->set_priority(sched::thread::priority_infinity);
++    poll_task->set_ticket(sched::thread::ticket_infinity);
+ 
+     // Please look at the section 5.1.6.1 of virtio specification for explanation
+     if (_dev.is_modern()) {
+diff --git a/include/osv/sched.hh b/include/osv/sched.hh
+index 0fb44f77..e696b7f5 100644
+--- a/include/osv/sched.hh
++++ b/include/osv/sched.hh
+@@ -26,8 +26,10 @@
+ #include <osv/clock.hh>
+ #include <osv/timer-set.hh>
+ #include <string.h>
++#include <random>
+ 
+ typedef float runtime_t;
++typedef u32 ticket_t;
+ 
+ extern "C" {
+ void smp_main();
+@@ -287,13 +289,22 @@ public:
+         return _priority;
+     }
+ 
++    void set_ticket(ticket_t ticket) {
++        _ticket = ticket;
++    }
++
++    ticket_t ticket() const {
++        return _ticket;
++    }
++
+     // When _Rtt=0, multiplicative normalization doesn't matter, so it doesn't
+     // matter what we set for _renormalize_count. We can't set it properly
+     // in the constructor (it doesn't run from the scheduler, or know which
+     // CPU's counter to copy), so we'll fix it in ran_for().
+-    constexpr thread_runtime(runtime_t priority) :
++    constexpr thread_runtime(runtime_t priority, ticket_t ticket) :
+             _priority(priority),
+-            _Rtt(0), _renormalize_count(-1) { };
++            _Rtt(0), _renormalize_count(-1),
++            _ticket(ticket) { };
+ 
+ private:
+     runtime_t _priority;            // p in the document
+@@ -301,6 +312,8 @@ private:
+     // If _renormalize_count == -1, it means the runtime is global
+     // (i.e., export_runtime() was called, or this is a new thread).
+     int _renormalize_count;
++
++    ticket_t _ticket;
+ };
+ 
+ // "tau" controls the length of the history we consider for scheduling,
+@@ -592,6 +605,14 @@ public:
+       * wait queue for) a crucial mutex (e.g., for I/O or memory allocation),
+       * which could cause the whole system to block. So use at your own peril.
+       */
++    /**
++     * Set/Get thread's tickets
++     */
++    void set_ticket(ticket_t ticket);
++    static constexpr ticket_t ticket_idle = 1;
++    static constexpr ticket_t ticket_default = 100;
++    static constexpr ticket_t ticket_infinity = std::numeric_limits<ticket_t>::max();
++    ticket_t ticket() const;
+     bool unsafe_stop();
+     void setup_large_syscall_stack();
+     void free_tiny_syscall_stack();
+diff --git a/modules/tests/Makefile b/modules/tests/Makefile
+index 721f80ee..9c13e943 100644
+--- a/modules/tests/Makefile
++++ b/modules/tests/Makefile
+@@ -129,7 +129,7 @@ tests := tst-pthread.so misc-ramdisk.so tst-vblk.so tst-bsd-evh.so \
+ 	tst-sigaltstack.so tst-fread.so tst-tcp-cork.so tst-tcp-v6.so \
+ 	tst-calloc.so tst-crypt.so tst-non-fpic.so tst-small-malloc.so \
+ 	tst-mmx-fpu.so tst-getopt.so tst-getopt-pie.so tst-non-pie.so tst-semaphore.so \
+-	tst-elf-init.so tst-realloc.so
++	tst-elf-init.so tst-realloc.so misc-scheduler-lottery.so
+ #	libstatic-thread-variable.so tst-static-thread-variable.so \
+ 
+ tests += testrunner.so
+diff --git a/modules/tests/module.py b/modules/tests/module.py
+index f795280d..fce5e066 100644
+--- a/modules/tests/module.py
++++ b/modules/tests/module.py
+@@ -1,4 +1,4 @@
+ from osv.modules import api
+ 
+-api.require('java-tests')
++#api.require('java-tests')
+ api.require('dl_tests')
+diff --git a/scripts/setup.py b/scripts/setup.py
+index b5288ed7..ebed46cf 100755
+--- a/scripts/setup.py
++++ b/scripts/setup.py
+@@ -238,7 +238,7 @@ class Ubuntu(object):
+                 'maven',
+                 'openssl',
+                 'p11-kit',
+-                'python3-dpkt',
++                #'python3-dpkt',
+                 'python3-requests',
+                 'qemu-system-x86',
+                 'qemu-utils',
+diff --git a/tests/misc-scheduler-lottery.cc b/tests/misc-scheduler-lottery.cc
+new file mode 100644
+index 00000000..986c5fe4
+--- /dev/null
++++ b/tests/misc-scheduler-lottery.cc
+@@ -0,0 +1,139 @@
++/*
++ * Copyright (C) 2013 Cloudius Systems, Ltd.
++ *
++ * This work is open source software, licensed under the terms of the
++ * BSD license as described in the LICENSE file in the top-level directory.
++ */
++
++// Test code modified from misc-scheduler.cc.
++// Benchmark the correctness of lottery scheduler on a single CPU.
++// NOTE: This test must be run with 1 cpu - it will refuse to run with more.
++//
++// This test checks the following scenarios:
++//
++// 1. Run several tight loops (wishing to use 100% of the CPU) together,
++//    to see they each get a proportional share of the CPU time.
++// 2. Similarly, for several threads with different priorities.
++
++#include <thread>
++#include <chrono>
++#include <iostream>
++#include <vector>
++#include <limits>
++
++#ifdef __OSV__
++#include <osv/sched.hh>
++#include <osv/mutex.h>
++#include <osv/condvar.h>
++#endif
++
++#define LOOP 10000000000ULL
++
++void _loop(int iterations)
++{
++    for (register int i=0; i<iterations; i++) {
++        for (register int j=0; j<10000; j++) {
++            // To force gcc to not optimize this loop away
++            asm volatile("" : : : "memory");
++        }
++    }
++}
++
++#ifdef __OSV__
++void ticket_test(u64 loop, std::vector<ticket_t> ts)
++{
++    std::cout << "Ticket test:";
++    for (auto t: ts)
++        std::cout << " " << t;
++    std::cout << "\n";
++
++    std::vector<std::thread> threads;
++    std::atomic<int> ended {0}, waiting {0};
++    volatile bool go = false;
++    std::vector<std::pair<ticket_t, float>> results;
++    
++    mutex mtx, cv_mtx;
++    condvar cv;
++
++    // save tester's old ticket & bump ticket priority to max
++    ticket_t tester_ticket = sched::thread::current()->ticket();
++    sched::thread::current()->set_ticket(sched::thread::ticket_infinity);
++
++    int tscnt = (int)ts.size();
++    for (auto t: ts) {
++        // threads start from default ticket of sched::thread::ticket_default
++        threads.push_back(std::thread([&cv, &cv_mtx, &waiting, &go, &ended, &mtx, &results, t, tscnt, loop]() {
++            sched::thread::current()->set_ticket(t);
++
++            // increment waiting, then block until runner preps it to run
++            waiting++;
++            mutex_lock(&cv_mtx);
++            cv.wait_until(cv_mtx, [&go]{ return go; });
++            mutex_unlock(&cv_mtx);
++
++            u64 val = 0;
++            auto start = std::chrono::system_clock::now();
++            for (u64 i = 1; i <= loop; i++) {
++                val *= i;
++            }
++            auto end = std::chrono::system_clock::now();
++            std::chrono::duration<float> len = end - start;
++            WITH_LOCK (mtx) {
++                results.emplace_back(t, len.count());
++            }
++            ended++;
++
++            while (ended != tscnt) {  // do a busy-loop until all threads end
++                _loop(1);
++            }
++        }));
++    }
++
++    while (waiting < tscnt) {
++        // yield, forcing set_ticket of runner threads
++        sched::thread::yield();
++    }
++
++    WITH_LOCK (cv_mtx) {
++        go = true;
++    }
++
++    // now wake all condvar-waiting threads.
++    // this must be done with ticket_infinity to flush all threads into ready list.
++    cv.wake_all();
++
++    // now reduce ticket to original
++    sched::thread::current()->set_ticket(tester_ticket);
++
++    for (auto &t : threads) {
++        t.join();
++    }
++    auto minlen = results.front().second;
++    for (auto x: results) {
++        if (x.second < minlen) {
++            minlen = x.second;
++        }
++    }
++    for (auto x: results) {
++        std::cout << "Ticket #" << x.first << ": " << x.second << "s (x" << (x.second / minlen) << ")\n";
++    }
++    std::cout << "Ticket test done\n";
++}
++#endif
++
++int main()
++{
++    if (std::thread::hardware_concurrency() != 1) {
++        std::cerr << "Detected " << std::thread::hardware_concurrency() <<
++                " CPUs, but this test requires exactly 1.\n";
++        return 0;
++    }
++
++#ifdef __OSV__
++    ticket_test(LOOP, {100, 100, 100, 100});
++    ticket_test(LOOP, {100, 400});
++    ticket_test(LOOP, {100, 200, 200, 400});
++#endif
++
++    return 0;
++}
