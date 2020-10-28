@@ -49,31 +49,14 @@ void ticket_test(u64 loop, std::vector<ticket_t> ts)
         std::cout << " " << t;
     std::cout << "\n";
 
-    std::vector<std::thread> threads;
-    std::atomic<int> ended {0}, waiting {0};
-    volatile bool go = false;
+    std::vector<sched::thread*> threads;
+    std::atomic<int> ended {0};
     std::vector<std::pair<ticket_t, tp_t>> results;
-    auto start = std::chrono::system_clock::now();  // just for auto-type, will be set again later
-    
-    mutex mtx, cv_mtx;
-    condvar cv;
-
-    // save tester's old ticket & bump ticket priority to max
-    ticket_t tester_ticket = sched::thread::current()->ticket();
-    sched::thread::current()->set_ticket(sched::thread::ticket_infinity);
+    mutex mtx;
 
     int tscnt = (int)ts.size();
     for (auto t: ts) {
-        // threads start from default ticket of sched::thread::ticket_default
-        threads.push_back(std::thread([&cv, &cv_mtx, &waiting, &go, &ended, &mtx, &results, t, tscnt, loop]() {
-            sched::thread::current()->set_ticket(t);
-
-            // increment waiting, then block until runner preps it to run
-            waiting++;
-            mutex_lock(&cv_mtx);
-            cv.wait_until(cv_mtx, [&go]{ return go; });
-            mutex_unlock(&cv_mtx);
-
+        auto thr = sched::thread::make([&mtx, &results, &ended, t, tscnt, loop](){
             u64 val = 0;
             for (u64 i = 1; i <= loop; i++) {
                 val *= i;
@@ -87,30 +70,25 @@ void ticket_test(u64 loop, std::vector<ticket_t> ts)
             while (ended != tscnt) {  // do a busy-loop until all threads end
                 _loop(1);
             }
-        }));
+        });
+        thr->set_ticket(t);
+        threads.push_back(thr);
     }
 
-    while (waiting < tscnt) {
-        // yield, forcing set_ticket of runner threads
-        sched::thread::yield();
+    // save tester's old ticket & bump ticket priority to max
+    ticket_t tester_ticket = sched::thread::current()->ticket();
+    sched::thread::current()->set_ticket(sched::thread::ticket_infinity);
+
+    for (auto thr: threads) {
+        thr->start();
     }
 
-    WITH_LOCK (cv_mtx) {
-        go = true;
-    }
-
-    // now wake all condvar-waiting threads.
-    // this must be done with ticket_infinity to flush all threads into ready list.
-    cv.wake_all();
-
-    // mark starting time for all threads
-    start = std::chrono::system_clock::now();
-
-    // now reduce ticket to original
+    tp_t start = std::chrono::system_clock::now();
     sched::thread::current()->set_ticket(tester_ticket);
 
-    for (auto &t : threads) {
-        t.join();
+    for (auto thr: threads) {
+        thr->join();
+        delete thr;
     }
     auto minlen = results.front().second;
     for (auto x: results) {
@@ -136,9 +114,19 @@ int main()
     }
 
 #ifdef __OSV__
+    // given 3 test cases
     ticket_test(LOOP, {100, 100, 100, 100});
     ticket_test(LOOP, {100, 400});
     ticket_test(LOOP, {100, 200, 200, 400});
+
+    // this should be the same as case 3, as it's just scaled by *10000
+    ticket_test(LOOP, {1000000, 2000000, 2000000, 4000000});
+
+    // x2 threads compared to case 1, how does the time scale?
+    ticket_test(LOOP, {100, 100, 100, 100, 100, 100, 100, 100});
+
+    // now try 8 threads but with exponentially distributed time
+    ticket_test(LOOP, {100, 200, 400, 800, 1600, 3200, 6400, 12800});
 #endif
 
     return 0;
