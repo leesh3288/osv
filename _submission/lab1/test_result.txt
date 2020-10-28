@@ -1,0 +1,46 @@
+OSv v0.55.0-4-g3211fb62
+eth0: 192.168.122.15
+Booted up in 431.94 ms
+Cmdline: /tests/misc-scheduler-lottery.so
+Ticket test: 100 100 100 100
+Ticket #100: 10.0277s (x1)
+Ticket #100: 10.1061s (x1.00782)
+Ticket #100: 10.4163s (x1.03875)
+Ticket #100: 10.9387s (x1.09085)
+Ticket test done
+Ticket test: 100 400
+Ticket #400: 3.47052s (x1)
+Ticket #100: 13.5768s (x3.91204)
+Ticket test done
+Ticket test: 100 200 200 400
+Ticket #400: 6.20202s (x1)
+Ticket #200: 11.8216s (x1.90609)
+Ticket #200: 12.1173s (x1.95377)
+Ticket #100: 23.5692s (x3.80025)
+Ticket test done
+Ticket test: 1000000 2000000 2000000 4000000
+Ticket #4000000: 5.9556s (x1)
+Ticket #2000000: 11.8136s (x1.98361)
+Ticket #2000000: 12.3362s (x2.07137)
+Ticket #1000000: 24.1965s (x4.06281)
+Ticket test done
+Ticket test: 100 100 100 100 100 100 100 100
+Ticket #100: 23.8757s (x1)
+Ticket #100: 24.2099s (x1.014)
+Ticket #100: 24.3539s (x1.02003)
+Ticket #100: 24.4235s (x1.02294)
+Ticket #100: 24.6448s (x1.03221)
+Ticket #100: 24.8407s (x1.04042)
+Ticket #100: 24.8875s (x1.04238)
+Ticket #100: 25.0477s (x1.04909)
+Ticket test done
+Ticket test: 100 200 400 800 1600 3200 6400 12800
+Ticket #12800: 5.39593s (x1)
+Ticket #6400: 11.4745s (x2.1265)
+Ticket #3200: 21.7206s (x4.02538)
+Ticket #1600: 44.9393s (x8.32839)
+Ticket #800: 94.5385s (x17.5203)
+Ticket #400: 172.722s (x32.0096)
+Ticket #200: 335.637s (x62.202)
+Ticket #100: 662.73s (x122.82)
+Ticket test done
