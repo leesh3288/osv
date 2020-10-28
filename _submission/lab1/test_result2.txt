@@ -1,0 +1,32 @@
+Ticket test: 100 100 100 100
+Ticket #100: 101.759s (x1)
+Ticket #100: 103.602s (x1.0181)
+Ticket #100: 103.767s (x1.01973)
+Ticket #100: 103.881s (x1.02085)
+Ticket test done
+Ticket test: 100 400
+Ticket #400: 32.7035s (x1)
+Ticket #100: 129.913s (x3.97246)
+Ticket test done
+Ticket test: 100 200 200 400
+Ticket #400: 58.2823s (x1)
+Ticket #200: 117.114s (x2.00942)
+Ticket #200: 117.901s (x2.02293)
+Ticket #100: 233.667s (x4.00922)
+Ticket test done
+Ticket test: 1000000 2000000 2000000 4000000
+Ticket #4000000: 58.5345s (x1)
+Ticket #2000000: 116.422s (x1.98894)
+Ticket #2000000: 116.626s (x1.99242)
+Ticket #1000000: 233.656s (x3.99177)
+Ticket test done
+Ticket test: 100 100 100 100 100 100 100 100
+Ticket #100: 203.189s (x1)
+Ticket #100: 204.418s (x1.00605)
+Ticket #100: 205.605s (x1.01189)
+Ticket #100: 205.612s (x1.01192)
+Ticket #100: 206.426s (x1.01593)
+Ticket #100: 209.728s (x1.03218)
+Ticket #100: 210.767s (x1.0373)
+Ticket #100: 211.5s (x1.0409)
+Ticket test done
