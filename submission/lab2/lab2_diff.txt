@@ -1,0 +1,667 @@
+diff --git a/Makefile b/Makefile
+index db3c68cf..c58329fe 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1755,7 +1755,8 @@ fs_objs += vfs/main.o \
+ 	vfs/vfs_task.o \
+ 	vfs/vfs_syscalls.o \
+ 	vfs/vfs_fops.o \
+-	vfs/vfs_dentry.o
++	vfs/vfs_dentry.o \
++	vfs/anon_fops.o
+ 
+ fs_objs += ramfs/ramfs_vfsops.o \
+ 	ramfs/ramfs_vnops.o
+diff --git a/fs/vfs/anon_fops.cc b/fs/vfs/anon_fops.cc
+new file mode 100644
+index 00000000..f92b3d4c
+--- /dev/null
++++ b/fs/vfs/anon_fops.cc
+@@ -0,0 +1,254 @@
++/*
++ * Copyright (C) 2013 Cloudius Systems, Ltd.
++ *
++ * This work is open source software, licensed under the terms of the
++ * BSD license as described in the LICENSE file in the top-level directory.
++ */
++
++
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <osv/file.h>
++#include <osv/poll.h>
++#include <fs/vfs/vfs.h>
++#include <osv/anon_file.hh>
++#include <osv/mmu.hh>
++#include <osv/pagecache.hh>
++#include <osv/debug.hh>
++#include <osv/prio.hh>
++#include <cstring>
++
++static void* zero_page;
++
++void  __attribute__((constructor(init_prio::anon_fops))) setup()
++{
++	zero_page = memory::alloc_page();
++    memset(zero_page, 0, mmu::page_size);
++}
++
++anon_file::anon_file()
++	: file(fflags(O_RDWR), DTYPE_ANONFD), size(0)
++{
++}
++
++int anon_file::close()
++{
++	auto fp = this;
++	SCOPE_LOCK(fp->f_lock);
++
++	for (auto &it: fp->o2p)
++		if (it.second != nullptr)
++			memory::free_page(it.second);
++
++	return 0;
++}
++
++int anon_file::read(struct uio *uio, int flags)
++{
++	auto fp = this;
++	SCOPE_LOCK(fp->f_lock);
++
++	if ((flags & FOF_OFFSET) == 0)
++		uio->uio_offset = fp->f_offset;
++
++	size_t bytes = 0, cursor = uio->uio_offset;
++
++	while (uio->uio_resid > 0 && cursor < fp->size)
++	{
++        struct iovec *iov = uio->uio_iov;
++
++        size_t copy_len = std::min(iov->iov_len, fp->size - cursor), copied = 0;
++		while (copied < copy_len)
++		{
++			size_t st = cursor;
++			size_t en = std::min(round_page(cursor + 1), cursor + copy_len);
++			size_t ofs_aligned = cursor & ~PAGE_MASK;
++			void *page = fp->o2p[ofs_aligned];
++
++			if (!page)
++				page = zero_page;
++			
++			memcpy((char*)iov->iov_base + copied, (char*)page + (st - ofs_aligned), en - st);
++			copied += en - st;
++		}
++
++        uio->uio_iov++;
++        uio->uio_iovcnt--;
++        uio->uio_resid -= copy_len;
++        uio->uio_offset += copy_len;
++		cursor = uio->uio_offset;
++		bytes += copy_len;
++    }
++
++	if ((flags & FOF_OFFSET) == 0)
++		fp->f_offset += bytes;
++
++	return 0;
++}
++
++int anon_file::write(struct uio *uio, int flags)
++{
++	auto fp = this;
++	SCOPE_LOCK(fp->f_lock);
++
++	// "POSIX requires that opening a file with the O_APPEND flag should have no effect on the location at which pwrite() writes data."
++	// pwrite, append: from uio_offset
++	// pwrite, no append: from uio_offset
++	// not pwrite, append: from size
++	// not pwrite, not append: from f_offset
++
++	if ((flags & FOF_OFFSET) == 0)
++	{
++		if ((fp->f_flags & O_APPEND) == 0)
++			uio->uio_offset = fp->f_offset;
++		else
++			uio->uio_offset = fp->size;
++	}
++
++	struct iovec *iov = uio->uio_iov;
++	size_t cursor = uio->uio_offset;
++
++	while (uio->uio_resid > 0)
++	{
++		size_t copy_len = iov->iov_len, copied = 0;
++		while (copied < copy_len)
++		{
++			size_t st = cursor;
++			size_t en = std::min(round_page(cursor + 1), cursor + copy_len);
++			size_t ofs_aligned = cursor & ~PAGE_MASK;
++			void*& page = fp->o2p[ofs_aligned];
++
++			if (!page)
++			{
++				page = memory::alloc_page();
++				if (!page)
++					throw make_error(ENOMEM);
++				memset(page, 0, mmu::page_size);
++				fp->size = std::max(fp->size, ofs_aligned + mmu::page_size);
++			}
++			
++			memcpy((char*)page + (st - ofs_aligned), (char*)iov->iov_base + copied, en - st);
++			copied += en - st;
++		}
++
++		uio->uio_iov++;
++		uio->uio_iovcnt--;
++		uio->uio_resid -= copy_len;
++		uio->uio_offset += copy_len;
++		cursor = uio->uio_offset;
++	}
++
++	if ((flags & FOF_OFFSET) == 0)
++		fp->f_offset = uio->uio_offset;
++
++	return 0;
++}
++
++int anon_file::truncate(off_t len)
++{
++	auto fp = this;
++	SCOPE_LOCK(fp->f_lock);
++
++	// anon fd implemented as sparse file, no need to change anything
++	fp->size = round_page(len);
++
++	return 0;
++}
++
++int anon_file::ioctl(u_long com, void *data)
++{
++	return EBADF;
++}
++
++int anon_file::poll(int events)
++{
++	return EBADF;
++}
++
++int anon_file::stat(struct stat* buf)
++{
++	auto fp = this;
++
++	// we race anyways, just elide scope lock
++	//SCOPE_LOCK(fp->f_lock);
++
++	// How should other fields be set?
++	buf->st_size = fp->size;
++
++	return 0;
++}
++
++int anon_file::chmod(mode_t mode)
++{
++	return EBADF;
++}
++
++bool anon_file::map_page(uintptr_t offset, mmu::hw_ptep<0> ptep, mmu::pt_element<0> pte, bool write, bool shared)
++{
++	auto fp = this;
++    SCOPE_LOCK(fp->f_lock);
++
++	void** _p_backed_page;
++	DROP_LOCK (mmu::vma_list_mutex.for_read()) {
++		// This pre-allocates the element with key offset.
++		// This may trigger a reallocation, which would block if we have read-lock acquired.
++		// Drop lock just for this operation.
++		_p_backed_page = &fp->o2p[offset];
++	}
++	void*& backed_page = *_p_backed_page;
++
++    if (write)  // write
++	{
++		if (!backed_page)  // backed page nonexistent, create new page
++		{
++			void *page = memory::alloc_page();
++			if (!page)
++				throw make_error(ENOMEM);
++			memset(page, 0, mmu::page_size);
++			if (shared)  // shared, save it as backed page
++				backed_page = page;
++			return mmu::write_pte(page, ptep, pte);
++		}
++        else if (!shared)  // CoW: backed page exist & private
++		{
++            void* page = memory::alloc_page();
++			if (!page)
++				throw make_error(ENOMEM);
++            memcpy(page, backed_page, mmu::page_size);
++            return mmu::write_pte(page, ptep, pte);
++        }
++		// backed page exist & shared, just add backed_page to pt
++    }
++	else if (!backed_page)  // read, backed page nonexistent - add zero_page to pte & mark CoW
++        return mmu::write_pte(zero_page, ptep, mmu::pte_mark_cow(pte, true));
++	// else, read & backed page existent. just add backed page to pt
++
++    return mmu::write_pte(backed_page, ptep, mmu::pte_mark_cow(pte, !shared));
++}
++
++bool anon_file::put_page(void *addr, uintptr_t offset, mmu::hw_ptep<0> ptep)
++{
++	auto fp = this;
++    SCOPE_LOCK(fp->f_lock);
++
++	void*& backed_page = fp->o2p[offset];
++
++	auto old = clear_pte(ptep);
++	void *old_addr = mmu::phys_to_virt(old.addr());
++
++	// remove if private mapping
++	return old_addr != backed_page && old_addr != zero_page;
++}
++
++std::unique_ptr<mmu::file_vma> anon_file::mmap(addr_range range, unsigned flags, unsigned perm, off_t offset)
++{
++	auto fp = this;
++	SCOPE_LOCK(fp->f_lock);
++
++	uintptr_t len = range.end() - range.start();
++	
++	if (len == 0 || len + offset < len || len + offset > fp->size)  // zero length, offset < 0 or over anon fd size
++		throw make_error(EINVAL);
++
++	return mmu::map_file_mmap(fp, range, flags, perm, offset);
++}
+diff --git a/fs/vfs/main.cc b/fs/vfs/main.cc
+index 3c8b327b..2c5be0d9 100644
+--- a/fs/vfs/main.cc
++++ b/fs/vfs/main.cc
+@@ -61,6 +61,8 @@
+ #include <osv/ioctl.h>
+ #include <osv/trace.hh>
+ #include <osv/run.hh>
++#include <osv/anonfd.hh>
++#include <osv/anon_file.hh>
+ #include <drivers/console.hh>
+ 
+ #include "vfs.h"
+@@ -299,7 +301,7 @@ off_t lseek(int fd, off_t offset, int whence)
+     error = fget(fd, &fp);
+     if (error)
+         goto out_errno;
+-
++  
+     error = sys_lseek(fp, offset, whence, &org);
+     fdrop(fp);
+ 
+@@ -1720,7 +1722,10 @@ int ftruncate(int fd, off_t length)
+     if (error)
+         goto out_errno;
+ 
+-    error = sys_ftruncate(fp, length);
++    if (fp->f_type == DTYPE_ANONFD)
++        error = fp->truncate(length);  // anon_file::truncate
++    else
++        error = sys_ftruncate(fp, length);
+     fdrop(fp);
+ 
+     if (error)
+@@ -2490,3 +2495,42 @@ void sys_panic(const char *str)
+     abort("panic: %s", str);
+ }
+ 
++int create_anon_fd(void)
++{
++    struct file *fp;
++    int fd;
++    int error;
++
++    error = sys_create_anon_fd(&fp);
++    if (error)
++        goto out_errno;
++
++    error = fdalloc(fp, &fd);
++    if (error)
++        goto out_fput;
++    
++    fdrop(fp);
++    return fd;
++
++    out_fput:
++    fdrop(fp);
++    
++    out_errno:
++    errno = error;
++    return -1;
++}
++
++int destroy_anon_fd(int fd)
++{
++    int error;
++
++    error = fdclose(fd);
++    if (error)
++        goto out_errno;
++
++    return 0;
++
++    out_errno:
++    errno = error;
++    return -1;
++}
+diff --git a/fs/vfs/vfs.h b/fs/vfs/vfs.h
+index d86ef957..d733233f 100644
+--- a/fs/vfs/vfs.h
++++ b/fs/vfs/vfs.h
+@@ -132,6 +132,7 @@ int	 sys_sync(void);
+ int	 sys_chmod(const char *path, mode_t mode);
+ int	 sys_fchmod(int fd, mode_t mode);
+ 
++int  sys_create_anon_fd(struct file **fpp);
+ 
+ int	 task_alloc(struct task **pt);
+ int	 task_conv(struct task *t, const char *path, int mode, char *full);
+diff --git a/fs/vfs/vfs_syscalls.cc b/fs/vfs/vfs_syscalls.cc
+index 487d5729..8f193a5d 100644
+--- a/fs/vfs/vfs_syscalls.cc
++++ b/fs/vfs/vfs_syscalls.cc
+@@ -53,6 +53,7 @@
+ #include <osv/prex.h>
+ #include <osv/vnode.h>
+ #include <osv/vfs_file.hh>
++#include <osv/anon_file.hh>
+ #include "vfs.h"
+ #include <fs/fs.hh>
+ 
+@@ -1484,3 +1485,20 @@ sys_fchmod(int fd, mode_t mode)
+         return vn_setmode(f->f_dentry->d_vnode, mode);
+     }
+ }
++
++int
++sys_create_anon_fd(struct file **fpp)
++{
++	struct file *fp;
++
++	try {
++	    fileref f = make_file<anon_file>();
++	    fp = f.get();
++	    fhold(fp);
++	} catch (int err) {
++	    return err;
++	}
++
++	*fpp = fp;
++	return 0;
++}
+diff --git a/include/osv/anon_file.hh b/include/osv/anon_file.hh
+new file mode 100644
+index 00000000..fc409083
+--- /dev/null
++++ b/include/osv/anon_file.hh
+@@ -0,0 +1,37 @@
++/*
++ * Copyright (C) 2013 Cloudius Systems, Ltd.
++ *
++ * This work is open source software, licensed under the terms of the
++ * BSD license as described in the LICENSE file in the top-level directory.
++ */
++
++#ifndef ANON_FILE_HH_
++#define ANON_FILE_HH_
++
++#include <osv/file.h>
++#include <unordered_map>
++
++class anon_file final : public file {
++public:
++    explicit anon_file();
++    virtual int read(struct uio *uio, int flags) override;
++    virtual int write(struct uio *uio, int flags) override;
++    virtual int truncate(off_t len) override;
++    virtual int close() override;
++    virtual int ioctl(u_long com, void *data) override;
++    virtual int poll(int events) override;
++    virtual int stat(struct stat* buf) override;
++    virtual int chmod(mode_t mode) override;
++
++    virtual bool map_page(uintptr_t offset, mmu::hw_ptep<0> ptep, mmu::pt_element<0> pte, bool write, bool shared);
++    virtual bool put_page(void *addr, uintptr_t offset, mmu::hw_ptep<0> ptep);
++    virtual std::unique_ptr<mmu::file_vma> mmap(addr_range range, unsigned flags, unsigned perm, off_t offset) override;
++
++    size_t size;
++    // offset: f_offset
++
++    // sparse backing pages map, offset -> data page ptr
++    std::unordered_map<uintptr_t, void*> o2p;
++};
++
++#endif /* ANON_FILE_HH_ */
+diff --git a/include/osv/anonfd.hh b/include/osv/anonfd.hh
+new file mode 100644
+index 00000000..c51bac10
+--- /dev/null
++++ b/include/osv/anonfd.hh
+@@ -0,0 +1,7 @@
++#ifndef ANONFD_HH_
++#define ANONFD_HH_
++
++int create_anon_fd(void);
++int destroy_anon_fd(int fd);
++
++#endif /* ANONFD_HH_ */
+\ No newline at end of file
+diff --git a/include/osv/file.h b/include/osv/file.h
+index c411c781..7e8fa568 100755
+--- a/include/osv/file.h
++++ b/include/osv/file.h
+@@ -62,7 +62,8 @@
+ typedef enum {
+ 	DTYPE_UNSPEC,
+ 	DTYPE_VNODE,
+-	DTYPE_SOCKET
++	DTYPE_SOCKET,
++	DTYPE_ANONFD,
+ } filetype_t;
+ 
+ struct vnode;
+diff --git a/include/osv/mmu.hh b/include/osv/mmu.hh
+index 1830048c..2a10d883 100644
+--- a/include/osv/mmu.hh
++++ b/include/osv/mmu.hh
+@@ -20,6 +20,7 @@
+ #include <osv/mmu-defs.hh>
+ #include <osv/align.hh>
+ #include <osv/trace.hh>
++#include <osv/rwlock.h>
+ 
+ struct exception_frame;
+ class balloon;
+@@ -30,6 +31,8 @@ typedef std::shared_ptr<balloon> balloon_ptr;
+  */
+ namespace mmu {
+ 
++extern rwlock_t vma_list_mutex;
++
+ // when we know it was dynamically allocated
+ inline phys virt_to_phys_dynamic_phys(void* virt)
+ {
+diff --git a/include/osv/prio.hh b/include/osv/prio.hh
+index c3cb4742..3bef5171 100644
+--- a/include/osv/prio.hh
++++ b/include/osv/prio.hh
+@@ -32,6 +32,7 @@ enum {
+     tracepoint_base,
+     malloc_pools,
+     idt,
++    anon_fops,
+ };
+ }
+ 
+diff --git a/modules/tests/Makefile b/modules/tests/Makefile
+index 721f80ee..586aec14 100644
+--- a/modules/tests/Makefile
++++ b/modules/tests/Makefile
+@@ -129,7 +129,7 @@ tests := tst-pthread.so misc-ramdisk.so tst-vblk.so tst-bsd-evh.so \
+ 	tst-sigaltstack.so tst-fread.so tst-tcp-cork.so tst-tcp-v6.so \
+ 	tst-calloc.so tst-crypt.so tst-non-fpic.so tst-small-malloc.so \
+ 	tst-mmx-fpu.so tst-getopt.so tst-getopt-pie.so tst-non-pie.so tst-semaphore.so \
+-	tst-elf-init.so tst-realloc.so
++	tst-elf-init.so tst-realloc.so misc-mmap-anon-fd.so
+ #	libstatic-thread-variable.so tst-static-thread-variable.so \
+ 
+ tests += testrunner.so
+diff --git a/modules/tests/module.py b/modules/tests/module.py
+index f795280d..fce5e066 100644
+--- a/modules/tests/module.py
++++ b/modules/tests/module.py
+@@ -1,4 +1,4 @@
+ from osv.modules import api
+ 
+-api.require('java-tests')
++#api.require('java-tests')
+ api.require('dl_tests')
+diff --git a/scripts/setup.py b/scripts/setup.py
+index b5288ed7..ebed46cf 100755
+--- a/scripts/setup.py
++++ b/scripts/setup.py
+@@ -238,7 +238,7 @@ class Ubuntu(object):
+                 'maven',
+                 'openssl',
+                 'p11-kit',
+-                'python3-dpkt',
++                #'python3-dpkt',
+                 'python3-requests',
+                 'qemu-system-x86',
+                 'qemu-utils',
+diff --git a/tests/misc-mmap-anon-fd.cc b/tests/misc-mmap-anon-fd.cc
+new file mode 100644
+index 00000000..bcb83a8a
+--- /dev/null
++++ b/tests/misc-mmap-anon-fd.cc
+@@ -0,0 +1,125 @@
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <osv/anonfd.hh>
++#include <osv/prex.h>
++#include <cstdio>
++#include <cstring>
++#include <chrono>
++#include <cerrno>
++#include <thread>
++#include <vector>
++#include <mutex>
++#include <condition_variable>
++#include <unistd.h>
++#include <fcntl.h>
++
++#define HUNDRED_MB (100ull * 1024 * 1024)
++
++/*
++1. Thread 1 creates a virtual memory via map() with MAP_PRIVATE or with MAP_SHARED (without MAP_PRIVATE).
++2. Thread 2 creates a virtual memory via map() with MAP_PRIVATE or with MAP_SHARED.
++3. Thread 2 writes a certain value with memset() to the virtual memory  -> With MAP_PRIVATE, CoW happens for each page write. 
++4. Thread 3 creates a virtual memory via map() with MAP_PRIVATE or with MAP_SHARED.
++5. Thread 3 reads the virtual memory -> No CoW happen
++6. Check what values thread 3 reads.
++    In the case of MAP_PRIVATE, thread 3 must not read the value written by thread 2.
++    In the case of MAP_SHARED, thread 3 must read the value written by thread 2.
++Things to evaluate:
++- Create a file size ranging from 100 MB, 200M, 300MB .. up to 1 GB (If your virtual machine does not have enough memory, 500 MB is fine)
++i) mmap() with MAP_SHARED, run the above step 1 ~ 4,  measure the time spent by thread 2, and report what values thread 3 reads
++ii) mmap() with MAP_PRIVATE, run the above step 1 ~ 4, measure the time spent by thread 2, and report what values thread 3 reads
++*/
++
++void mmap_anon_fd_test(int mult, bool do_share)
++{
++    std::mutex mtx;
++    std::condition_variable cv;
++    int state = 1;
++
++    size_t file_size = HUNDRED_MB * mult;
++
++    int fd = create_anon_fd();
++    ftruncate(fd, file_size);
++
++    std::chrono::milliseconds t2_time;
++
++    std::thread T1([file_size, fd, &cv, &mtx, &state]{
++        // Step 1: mmap & init memory
++        void *ptr = mmap((void*)0x1000000000, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
++        for (size_t i = 0; i < file_size; i += PAGE_SIZE)
++            memset(ptr + i, 0xaa, PAGE_SIZE);  // init memory data
++        
++        std::unique_lock<std::mutex> lk(mtx);
++        state = 2;
++        lk.unlock();
++        cv.notify_all();
++
++        lk.lock();
++        cv.wait(lk, [&state]{ return state == 4; });
++        lk.unlock();
++        munmap(ptr, file_size);
++    });
++
++    std::thread T2([file_size, fd, do_share, &cv, &mtx, &state, &t2_time]{
++        // Step 2: T2 mmap
++        std::unique_lock<std::mutex> lk(mtx);
++        cv.wait(lk, [&state]{ return state == 2; });
++        lk.unlock();
++        void *ptr = mmap((void*)0x2000000000, file_size, PROT_READ | PROT_WRITE, do_share ? MAP_SHARED : MAP_PRIVATE, fd, 0);
++
++        // Step 3: T2 write
++        auto st = std::chrono::system_clock::now();
++        memset(ptr, 0xbb, file_size);
++        auto en = std::chrono::system_clock::now();
++        t2_time = std::chrono::duration_cast<std::chrono::milliseconds>(en - st);
++        
++        lk.lock();
++        state = 3;
++        lk.unlock();
++        cv.notify_all();
++
++        lk.lock();
++        cv.wait(lk, [&state]{ return state == 4; });
++        lk.unlock();
++        munmap(ptr, file_size);
++    });
++
++    std::thread T3([file_size, fd, do_share, &cv, &mtx, &state]{
++        // Step 4. T2 mmap
++        std::unique_lock<std::mutex> lk(mtx);
++        cv.wait(lk, [&state]{ return state == 3; });
++        lk.unlock();
++        unsigned char *ptr = (unsigned char *)mmap((void*)0x3000000000, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
++
++        // Step 5: T2 read
++        for (size_t i = 0; i < file_size; i += PAGE_SIZE)
++            if ((do_share && ptr[i] != 0xbb) || (!do_share && ptr[i] != 0xaa))
++                fprintf(stderr, "Wrong data %02x at offset %x\n", ptr[i], i);
++        
++        lk.lock();
++        state = 4;
++        lk.unlock();
++        cv.notify_all();
++
++        munmap(ptr, file_size);
++    });
++
++    T1.join();
++    T2.join();
++    T3.join();
++
++    destroy_anon_fd(fd);
++
++    printf("T2 Time Spent (Filesize %2d * 100MB, do_share %c): %8lld ms\n", mult, do_share ? 'T' : 'F', t2_time.count());
++}
++
++int main()
++{
++    for (int i = 1; i <= 10; i++)
++        mmap_anon_fd_test(i, true);
++
++    for (int i = 1; i <= 10; i++)
++        mmap_anon_fd_test(i, false);
++
++    return 0;
++}
