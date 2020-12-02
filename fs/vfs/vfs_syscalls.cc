@@ -53,6 +53,7 @@
 #include <osv/prex.h>
 #include <osv/vnode.h>
 #include <osv/vfs_file.hh>
+#include <osv/anon_file.hh>
 #include "vfs.h"
 #include <fs/fs.hh>
 
@@ -1483,4 +1484,21 @@ sys_fchmod(int fd, mode_t mode)
     } else {
         return vn_setmode(f->f_dentry->d_vnode, mode);
     }
+}
+
+int
+sys_create_anon_fd(struct file **fpp)
+{
+	struct file *fp;
+
+	try {
+	    fileref f = make_file<anon_file>();
+	    fp = f.get();
+	    fhold(fp);
+	} catch (int err) {
+	    return err;
+	}
+
+	*fpp = fp;
+	return 0;
 }

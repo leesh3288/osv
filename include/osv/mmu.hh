@@ -20,6 +20,7 @@
 #include <osv/mmu-defs.hh>
 #include <osv/align.hh>
 #include <osv/trace.hh>
+#include <osv/rwlock.h>
 
 struct exception_frame;
 class balloon;
@@ -29,6 +30,8 @@ typedef std::shared_ptr<balloon> balloon_ptr;
  * MMU namespace
  */
 namespace mmu {
+
+extern rwlock_t vma_list_mutex;
 
 // when we know it was dynamically allocated
 inline phys virt_to_phys_dynamic_phys(void* virt)

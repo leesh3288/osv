@@ -61,6 +61,8 @@
 #include <osv/ioctl.h>
 #include <osv/trace.hh>
 #include <osv/run.hh>
+#include <osv/anonfd.hh>
+#include <osv/anon_file.hh>
 #include <drivers/console.hh>
 
 #include "vfs.h"
@@ -299,7 +301,7 @@ off_t lseek(int fd, off_t offset, int whence)
     error = fget(fd, &fp);
     if (error)
         goto out_errno;
-
+  
     error = sys_lseek(fp, offset, whence, &org);
     fdrop(fp);
 
@@ -1720,7 +1722,10 @@ int ftruncate(int fd, off_t length)
     if (error)
         goto out_errno;
 
-    error = sys_ftruncate(fp, length);
+    if (fp->f_type == DTYPE_ANONFD)
+        error = fp->truncate(length);  // anon_file::truncate
+    else
+        error = sys_ftruncate(fp, length);
     fdrop(fp);
 
     if (error)
@@ -2490,3 +2495,42 @@ void sys_panic(const char *str)
     abort("panic: %s", str);
 }
 
+int create_anon_fd(void)
+{
+    struct file *fp;
+    int fd;
+    int error;
+
+    error = sys_create_anon_fd(&fp);
+    if (error)
+        goto out_errno;
+
+    error = fdalloc(fp, &fd);
+    if (error)
+        goto out_fput;
+    
+    fdrop(fp);
+    return fd;
+
+    out_fput:
+    fdrop(fp);
+    
+    out_errno:
+    errno = error;
+    return -1;
+}
+
+int destroy_anon_fd(int fd)
+{
+    int error;
+
+    error = fdclose(fd);
+    if (error)
+        goto out_errno;
+
+    return 0;
+
+    out_errno:
+    errno = error;
+    return -1;
+}

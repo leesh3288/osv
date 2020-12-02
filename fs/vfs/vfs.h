@@ -132,6 +132,7 @@ int	 sys_sync(void);
 int	 sys_chmod(const char *path, mode_t mode);
 int	 sys_fchmod(int fd, mode_t mode);
 
+int  sys_create_anon_fd(struct file **fpp);
 
 int	 task_alloc(struct task **pt);
 int	 task_conv(struct task *t, const char *path, int mode, char *full);

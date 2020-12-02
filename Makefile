@@ -1755,7 +1755,8 @@ fs_objs += vfs/main.o \
 	vfs/vfs_task.o \
 	vfs/vfs_syscalls.o \
 	vfs/vfs_fops.o \
-	vfs/vfs_dentry.o
+	vfs/vfs_dentry.o \
+	vfs/anon_fops.o
 
 fs_objs += ramfs/ramfs_vfsops.o \
 	ramfs/ramfs_vnops.o

@@ -62,7 +62,8 @@
 typedef enum {
 	DTYPE_UNSPEC,
 	DTYPE_VNODE,
-	DTYPE_SOCKET
+	DTYPE_SOCKET,
+	DTYPE_ANONFD,
 } filetype_t;
 
 struct vnode;

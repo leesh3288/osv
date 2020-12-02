@@ -32,6 +32,7 @@ enum {
     tracepoint_base,
     malloc_pools,
     idt,
+    anon_fops,
 };
 }
 
