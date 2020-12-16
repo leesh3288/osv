@@ -15,6 +15,7 @@
 #include "osv/mount.h"
 #include "libc/libc.hh"
 #include <safe-ptr.hh>
+#include "drivers/random.hh"
 
 TRACEPOINT(trace_memory_mmap, "addr=%p, length=%d, prot=%d, flags=%d, fd=%d, offset=%d", void *, size_t, int, int, int, off_t);
 TRACEPOINT(trace_memory_mmap_err, "%d", int);
@@ -135,7 +136,7 @@ void *mmap(void *addr, size_t length, int prot, int flags,
         // 0x200000000000ul (see mmu::allocate()).  MAP_32BIT asks for a lower
         // default. If MAP_FIXED or addr were specified, the default does not
         // matter anyway.
-        addr = (void*)0x2000000ul;
+        addr = (void*)randomdev::randomize_page(0x80000000ul, 0x40000000);
     }
     if (flags & MAP_ANONYMOUS) {
         // We have already determined (see below) the region where the heap must be located. Now the JVM will request
