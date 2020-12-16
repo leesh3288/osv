@@ -594,15 +594,13 @@ void main_cont(int loader_argc, char** loader_argv)
 
     debug("Firmware vendor: %s\n", osv::firmware_vendor().c_str());
 
+    parse_options(loader_argc, loader_argv);
+
     if (opt_random) {
         randomdev::randomdev_init();
     }
 
     elf::create_main_program();
-
-    std::vector<std::vector<std::string> > cmds;
-
-    parse_options(loader_argc, loader_argv);
 
     setenv("OSV_VERSION", osv::version().c_str(), 1);
 
