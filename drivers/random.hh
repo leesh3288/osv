@@ -55,6 +55,7 @@ static inline unsigned long get_random_long(void)
 }
 
 unsigned long randomize_page(unsigned long, unsigned long);
+unsigned long randomize_page_with_rand(unsigned long, unsigned long, unsigned long);
 
 }
 

@@ -253,6 +253,12 @@ u64 get_random_u64(void){
 unsigned long
 randomize_page(unsigned long start, unsigned long range)
 {
+	return randomize_page_with_rand(start, range, get_random_long());
+}
+
+unsigned long
+randomize_page_with_rand(unsigned long start, unsigned long range, unsigned long rand)
+{
 	if (!mmu::is_page_aligned(start)) {
 		range -= align_up(start, mmu::page_size)- start;
 		start = align_up(start, mmu::page_size);
@@ -266,7 +272,7 @@ randomize_page(unsigned long start, unsigned long range)
 	if (range == 0)
 		return start;
 
-	return start + (get_random_long() % range << mmu::page_size_shift);
+	return start + (rand % range << mmu::page_size_shift);
 }
 
 }
