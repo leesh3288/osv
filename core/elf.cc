@@ -28,6 +28,8 @@
 #include <osv/demangle.hh>
 #include <boost/version.hpp>
 #include <deque>
+#include "drivers/random.hh"
+#include <osv/kaslr.hh>
 
 #include "arch.hh"
 
@@ -1271,7 +1273,8 @@ program* s_program;
 void create_main_program()
 {
     assert(!s_program);
-    s_program = new elf::program();
+    unsigned long rand_program_base = randomdev::randomize_page_with_rand(program_base, program_base, kaslr_get_random_long());
+    s_program = new elf::program(reinterpret_cast<void *>(rand_program_base));
 }
 
 program::program(void* addr)
