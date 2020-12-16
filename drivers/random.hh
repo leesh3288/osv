@@ -37,6 +37,25 @@ public:
 
 void randomdev_init();
 
+u32 get_random_u32(void);
+u64 get_random_u64(void);
+
+static inline unsigned int get_random_int(void)
+{
+	return get_random_u32();
+}
+
+static inline unsigned long get_random_long(void)
+{
+#ifdef __x86_64__
+	return get_random_u64();
+#else
+	return get_random_u32();
+#endif
+}
+
+unsigned long randomize_page(unsigned long, unsigned long);
+
 }
 
 #endif

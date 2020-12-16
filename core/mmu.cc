@@ -28,6 +28,7 @@
 #include <osv/rcu.hh>
 #include <osv/rwlock.h>
 #include <numeric>
+#include "drivers/random.hh"
 
 extern void* elf_start;
 extern size_t elf_size;
@@ -1108,7 +1109,7 @@ uintptr_t allocate(vma *v, uintptr_t start, size_t size, bool search)
     if (search) {
         // search for unallocated hole around start
         if (!start) {
-            start = 0x200000000000ul;
+            start = randomdev::randomize_page(0x200000000000ul, 0x10000000000);
         }
         start = find_hole(start, size);
     } else {

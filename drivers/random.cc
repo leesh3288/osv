@@ -39,6 +39,8 @@
 #include <osv/device.h>
 #include <osv/uio.h>
 #include <osv/debug.hh>
+#include <osv/mmu.hh>
+#include <osv/align.hh>
 
 #include <dev/random/randomdev.h>
 #include <dev/random/randomdev_soft.h>
@@ -206,6 +208,65 @@ void randomdev_init()
 {
     new random_device();
     debug("random: <%s> initialized\n", random_adaptor->ident);
+}
+
+u32 get_random_u32(void){
+    u32 ret;
+    struct iovec iov = {
+        .iov_base = &ret,
+        .iov_len = sizeof(u32),
+    };
+
+    struct uio _uio = {
+        .uio_iov = &iov,
+	    .uio_iovcnt = 1,
+	    .uio_offset = 0,
+	    .uio_resid = sizeof(u32),
+	    .uio_rw = UIO_READ,
+    };
+
+    random_read(nullptr, &_uio, O_RDONLY);
+
+    return ret;
+}
+
+u64 get_random_u64(void){
+    u64 ret;
+    struct iovec iov = {
+        .iov_base = &ret,
+        .iov_len = sizeof(u64),
+    };
+
+    struct uio _uio = {
+        .uio_iov = &iov,
+	    .uio_iovcnt = 1,
+	    .uio_offset = 0,
+	    .uio_resid = sizeof(u64),
+	    .uio_rw = UIO_READ,
+    };
+
+    random_read(nullptr, &_uio, O_RDONLY);
+
+    return ret;
+}
+
+unsigned long
+randomize_page(unsigned long start, unsigned long range)
+{
+	if (!mmu::is_page_aligned(start)) {
+		range -= align_up(start, mmu::page_size)- start;
+		start = align_up(start, mmu::page_size);
+	}
+
+	if (start > ULONG_MAX - range)
+		range = ULONG_MAX - start;
+
+	range >>= mmu::page_size_shift;
+
+	if (range == 0)
+		return start;
+
+	return start + (get_random_long() % range << mmu::page_size_shift);
 }
 
 }

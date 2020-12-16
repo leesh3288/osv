@@ -389,9 +389,7 @@ void* do_main_thread(void *_main_args)
     arch_init_drivers();
     console::console_init();
     nulldev::nulldev_init();
-    if (opt_random) {
-        randomdev::randomdev_init();
-    }
+    
     boot_time.event("drivers loaded");
 
     if (opt_mount) {
@@ -595,6 +593,10 @@ void main_cont(int loader_argc, char** loader_argv)
     osv::firmware_probe();
 
     debug("Firmware vendor: %s\n", osv::firmware_vendor().c_str());
+
+    if (opt_random) {
+        randomdev::randomdev_init();
+    }
 
     elf::create_main_program();
 
