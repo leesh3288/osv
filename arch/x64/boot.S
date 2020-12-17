@@ -30,9 +30,9 @@ ident_pt_l4:
     .rept 511
     .quad 0
     .endr
-#if OSV_KERNEL_VM_SHIFT != 0x40000000 && OSV_KERNEL_VM_SHIFT != 0
-#error This code only works correctly for OSV_KERNEL_VM_SHIFT = 0x40000000 or 0
-#endif
+;#if OSV_KERNEL_VM_SHIFT != 0x40000000 && OSV_KERNEL_VM_SHIFT != 0
+;#error This code only works correctly for OSV_KERNEL_VM_SHIFT = 0x40000000 or 0
+;#endif
 ident_pt_l3:
     # Each of the 512 entries in this table maps the very 1st 512 GiB of
     # virtual address space 1 GiB at a time

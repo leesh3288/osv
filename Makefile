@@ -288,6 +288,7 @@ COMMON = $(autodepend) -g -Wall -Wno-pointer-arith $(CFLAGS_WERROR) -Wformat=0 -
 	-include compiler/include/intrinsics.hh \
 	$(arch-cflags) $(conf-opt) $(acpi-defines) $(tracing-flags) $(gcc-sysroot) \
 	$(configuration) -D__OSV__ -D__XEN_INTERFACE_VERSION__="0x00030207" -DARCH_STRING=$(ARCH_STR) $(EXTRA_FLAGS)
+COMMON += -fPIC
 ifeq ($(arch),aarch64)
   COMMON += -nostdinc
 endif
@@ -298,7 +299,7 @@ tracing-flags = $(tracing-flags-$(conf-tracing))
 
 gcc-opt-Og := $(call compiler-flag, -Og, -Og, compiler/empty.cc)
 
-CXXFLAGS = -std=gnu++11 $(COMMON)
+CXXFLAGS = -std=gnu++11 $(COMMON) 
 CFLAGS = -std=gnu99 $(COMMON)
 
 # should be limited to files under libc/ eventually
@@ -1854,7 +1855,7 @@ $(loader_options_dep): stage1
 	fi
 
 $(out)/loader.elf: $(stage1_targets) arch/$(arch)/loader.ld $(out)/bootfs.o $(loader_options_dep)
-	$(call quiet, $(LD) -o $@ --defsym=OSV_KERNEL_BASE=$(kernel_base) \
+	$(call quiet, $(LD) -o $@ -fPIC -shared --defsym=OSV_KERNEL_BASE=$(kernel_base) \
 	    --defsym=OSV_KERNEL_VM_BASE=$(kernel_vm_base) --defsym=OSV_KERNEL_VM_SHIFT=$(kernel_vm_shift) \
 		-Bdynamic --export-dynamic --eh-frame-hdr --enable-new-dtags -L$(out)/arch/$(arch) \
 	    $(^:%.ld=-T %.ld) \
@@ -1870,7 +1871,7 @@ $(out)/loader.elf: $(stage1_targets) arch/$(arch)/loader.ld $(out)/bootfs.o $(lo
 	$(call quiet, $(CC) $(out)/osv.o -nostdlib -shared -o $(out)/libosv.so -T $(out)/libosv.ld, LIBOSV.SO)
 
 $(out)/kernel.elf: $(stage1_targets) arch/$(arch)/loader.ld $(out)/empty_bootfs.o $(loader_options_dep)
-	$(call quiet, $(LD) -o $@ --defsym=OSV_KERNEL_BASE=$(kernel_base) \
+	$(call quiet, $(LD) -o $@ -fPIC --defsym=OSV_KERNEL_BASE=$(kernel_base) \
 	    --defsym=OSV_KERNEL_VM_BASE=$(kernel_vm_base) --defsym=OSV_KERNEL_VM_SHIFT=$(kernel_vm_shift) \
 		-Bdynamic --export-dynamic --eh-frame-hdr --enable-new-dtags -L$(out)/arch/$(arch) \
 	    $(^:%.ld=-T %.ld) \
