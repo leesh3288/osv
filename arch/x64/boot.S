@@ -151,7 +151,7 @@ start64:
 kaslr_gen_random:
     # TODO : wow SO RANDOM
     lea kaslr_vm_shift, %rax
-    movq $0x00000000, (%rax)
+    movq $0x40000000, (%rax)
 patch_kernel_elf:
     xor %rsi, %rsi
     xor %rdi, %rdi
@@ -220,6 +220,7 @@ start64_continue:
     # %ebx is set by boot16.S before running the loader
     mov %rbx, osv_multiboot_info
     lea init_stack_top, %rsp
+    add kaslr_vm_shift, %rsp
     call premain
     mov __loader_argc, %edi
     mov __loader_argv, %rsi

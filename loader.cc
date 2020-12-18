@@ -116,6 +116,7 @@ void premain()
     setup_tls(inittab);
     boot_time.event(3,"TLS initialization");
     for (auto init = inittab.start; init < inittab.start + inittab.count; ++init) {
+        debug_early_u64("init ", (size_t)*init);
         (*(init))();
     }
     boot_time.event(".init functions");

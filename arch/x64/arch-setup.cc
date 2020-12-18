@@ -97,7 +97,7 @@ void arch_setup_free_memory()
 {
     static ulong edata, edata_phys;
     asm ("movl $.edata, %0" : "=rm"(edata));
-    edata_phys = edata - kaslr_vm_shift;
+    edata_phys = edata - OSV_KERNEL_VM_SHIFT;
 
     // copy to stack so we don't free it now
     auto omb = *osv_multiboot_info;
@@ -173,7 +173,6 @@ void arch_setup_free_memory()
     // now that we have some free memory, we can start mapping the rest
     mmu::switch_to_runtime_page_tables();
     for_each_e820_entry(e820_buffer, e820_size, [] (e820ent ent) {
-        //
         // Free the memory below elf_phys_start which we could not before
         if (ent.addr < (u64)elf_phys_start) {
             auto ent_below_kernel = ent;
