@@ -23,6 +23,7 @@
 #include "dmi.hh"
 
 osv_multiboot_info_type* osv_multiboot_info;
+extern size_t kaslr_vm_shift;
 
 #include "drivers/virtio-mmio.hh"
 void parse_cmdline(multiboot_info_type& mb)
@@ -96,7 +97,7 @@ void arch_setup_free_memory()
 {
     static ulong edata, edata_phys;
     asm ("movl $.edata, %0" : "=rm"(edata));
-    edata_phys = edata - OSV_KERNEL_VM_SHIFT;
+    edata_phys = edata - kaslr_vm_shift;
 
     // copy to stack so we don't free it now
     auto omb = *osv_multiboot_info;
@@ -164,7 +165,7 @@ void arch_setup_free_memory()
     static mmu::phys elf_phys_start = reinterpret_cast<mmu::phys>(elf_header);
     // There is simple invariant between elf_phys_start and elf_start
     // as expressed by the assignment below
-    elf_start = reinterpret_cast<void*>(elf_phys_start + OSV_KERNEL_VM_SHIFT);
+    elf_start = reinterpret_cast<void*>(elf_phys_start + kaslr_vm_shift);
     elf_size = edata_phys - elf_phys_start;
     mmu::linear_map(elf_start, elf_phys_start, elf_size, OSV_KERNEL_BASE);
     // get rid of the command line, before low memory is unmapped

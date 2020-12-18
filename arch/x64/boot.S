@@ -81,6 +81,11 @@ gdt_end = .
 .globl gdt64_desc
 
 .align 8
+.global kaslr_vm_shift
+kaslr_vm_shift:
+    .quad 0
+
+.align 8
 . = . + 4  # make sure tss_ist is aligned on a quad boundary
 
 .bss
@@ -88,7 +93,6 @@ gdt_end = .
 .align 16
 . = . + 4096*10
 init_stack_top = .
-
 .text
 
 .globl start32
@@ -144,6 +148,52 @@ start64:
     .cfi_startproc simple
     .cfi_def_cfa %rsp, 0
     .cfi_undefined %rip
+kaslr_gen_random:
+    # TODO : wow SO RANDOM
+    lea kaslr_vm_shift, %rax
+    movq $0x00000000, (%rax)
+patch_kernel_elf:
+    xor %rsi, %rsi
+    xor %rdi, %rdi
+    mov $OSV_KERNEL_BASE, %rax
+    movw 0x36(%rax), %si # PHT entry size
+    movw 0x38(%rax), %di # Number of entries in PHT
+    movq 0x20(%rax), %rax # PHT file offset
+    add $OSV_KERNEL_BASE, %rax
+    mov kaslr_vm_shift, %rcx
+patch_PHT:
+    add %rcx, 0x10(%rax)
+    cmpb $2, (%rax)
+    jne patch_init_array_end
+patch_init_array:
+    mov $OSV_KERNEL_BASE, %rdx
+    add 0x8(%rax), %rdx # ELF Dynamic Information
+    mov 0x18(%rdx), %r8 # DT_INIT_ARRAY
+    mov %r8, %r9 # _init_array
+    movq 0x28(%rdx), %r10 # DT_INIT_ARRAYSZ
+    add %rcx, 0x18(%rdx)
+patch_init_array_entry:
+    add %rcx, (%r9)
+    add $0x8, %r9
+    sub $0x8, %r10
+    jne patch_init_array_entry
+patch_init_array_end:
+    add %esi, %eax
+    sub $1, %edi
+    jne patch_PHT
+vm_shift_jump:
+    call pop_rip
+pop_rip:
+    pop %rax
+vm_shift_jump_calc:
+    # TODO : is it overflow-safe??
+    add $vm_shift_jump_end + 1, %rax
+    sub $vm_shift_jump_calc, %rax
+    # TODO : change with various vm shift
+    # TODO : register various vm shift into page table
+    add kaslr_vm_shift, %rax
+    jmp *%rax
+vm_shift_jump_end:
     # Check for non-zero value in RDI register to detect if
     # it contains the address of the boot_params structure
     # that would be set if we came here from vmlinux_entry64

@@ -61,6 +61,8 @@
 using namespace osv;
 using namespace osv::clock::literals;
 
+extern size_t kaslr_vm_shift;
+
 asm(".pushsection \".debug_gdb_scripts\", \"MS\",@progbits,1 \n"
     ".byte 1 \n"
     ".asciz \"scripts/loader.py\" \n"
@@ -104,7 +106,7 @@ void premain()
     arch_init_premain();
 
     auto inittab = elf::get_init(reinterpret_cast<elf::Elf64_Ehdr*>(
-        (void*)elf_header + OSV_KERNEL_VM_SHIFT));
+        (void*)elf_header + kaslr_vm_shift));
 
     if (inittab.tls.start == nullptr) {
         debug_early("premain: failed to get TLS data from ELF\n");
@@ -114,7 +116,7 @@ void premain()
     setup_tls(inittab);
     boot_time.event(3,"TLS initialization");
     for (auto init = inittab.start; init < inittab.start + inittab.count; ++init) {
-        (*init)();
+        (*(init))();
     }
     boot_time.event(".init functions");
 }

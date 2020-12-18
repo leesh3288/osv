@@ -32,6 +32,7 @@
 
 extern void* elf_start;
 extern size_t elf_size;
+extern size_t kaslr_vm_shift;
 
 namespace {
 
@@ -96,7 +97,7 @@ void* phys_to_virt(phys pa)
 {
     void* phys_addr = reinterpret_cast<void*>(pa);
     if ((phys_addr >= elf_phys_start) && (phys_addr < elf_phys_start + elf_size)) {
-        return (void*)(phys_addr + OSV_KERNEL_VM_SHIFT);
+        return (void*)(phys_addr + kaslr_vm_shift);
     }
 
     return phys_mem + pa;
@@ -105,9 +106,9 @@ void* phys_to_virt(phys pa)
 phys virt_to_phys_pt(void* virt);
 
 phys virt_to_phys(void *virt)
-{
+{   
     if ((virt >= elf_start) && (virt < elf_start + elf_size)) {
-        return reinterpret_cast<phys>((void*)(virt - OSV_KERNEL_VM_SHIFT));
+        return reinterpret_cast<phys>((void*)(virt - kaslr_vm_shift));
     }
 
 #if CONF_debug_memory
