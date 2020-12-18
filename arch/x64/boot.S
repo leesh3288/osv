@@ -152,35 +152,16 @@ kaslr_gen_random:
     # TODO : wow SO RANDOM
     lea kaslr_vm_shift, %rax
     movq $0x40000000, (%rax)
-patch_kernel_elf:
-    xor %rsi, %rsi
-    xor %rdi, %rdi
-    mov $OSV_KERNEL_BASE, %rax
-    movw 0x36(%rax), %si # PHT entry size
-    movw 0x38(%rax), %di # Number of entries in PHT
-    movq 0x20(%rax), %rax # PHT file offset
-    add $OSV_KERNEL_BASE, %rax
-    mov kaslr_vm_shift, %rcx
-patch_PHT:
-    add %rcx, 0x10(%rax)
-    cmpb $2, (%rax)
-    jne patch_init_array_end
-patch_init_array:
-    mov $OSV_KERNEL_BASE, %rdx
-    add 0x8(%rax), %rdx # ELF Dynamic Information
-    mov 0x18(%rdx), %r8 # DT_INIT_ARRAY
-    mov %r8, %r9 # _init_array
-    movq 0x28(%rdx), %r10 # DT_INIT_ARRAYSZ
-    add %rcx, 0x18(%rdx)
-patch_init_array_entry:
-    add %rcx, (%r9)
-    add $0x8, %r9
-    sub $0x8, %r10
-    jne patch_init_array_entry
-patch_init_array_end:
-    add %esi, %eax
-    sub $1, %edi
-    jne patch_PHT
+    push %rax
+    push %rcx
+    push %rdx
+    push %rdi
+    mov $OSV_KERNEL_BASE, %rdi
+    call relocate_kernel
+    pop %rdi
+    pop %rdx
+    pop %rcx
+    pop %rax
 vm_shift_jump:
     call pop_rip
 pop_rip:
