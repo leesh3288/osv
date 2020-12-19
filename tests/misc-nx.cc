@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cassert>
 #include <sys/mman.h>
+#include <osv/sched.hh>
 #include <osv/debug.h>
 
 
@@ -90,9 +91,29 @@ void test_kernel_malloc_NX(char *argv[])
     assert(false);
 }
 
+void test_internal_thread_stack()
+{
+    auto th = sched::thread::make([](){
+        volatile char c;
+        void *stack_addr = (void*)&c;
+
+        assert(stack_addr != NULL);
+
+        // Write to OSv internal stack and execute.
+        // This succeeds by default. After implementation of W^X, this should fail.
+        *(volatile char*)stack_addr = 0xc3;
+        ((void(*)())stack_addr)();
+
+        assert(false);
+    });
+
+    th->start();
+    th->join();
+}
+
 void test_kernel_elf_NX()
 {
-    void *kernel_func_addr = (void*)debug;
+    void *kernel_func_addr = (void*)static_cast<void(*)(const char *)>(debug);
 
     assert(kernel_func_addr != NULL);
 
@@ -109,7 +130,8 @@ int main(int argc, char *argv[], char *envp[])
     test_mmap_success_1();
     test_mmap_success_2();
     
-    test_kernel_elf_NX();
+    //test_kernel_malloc_NX(argv);
+    test_internal_thread_stack();
 
     return 0;
 }
