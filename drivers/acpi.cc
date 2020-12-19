@@ -169,9 +169,8 @@ void *AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS Where, ACPI_SIZE Length)
     
     // Note: This is part of ACPICA memory management code.
     // Although specification seem to only use this for cases such as table loading,
-    //  it does not specify permissions.
-    // We are assuming RWX for this case.
-    mmu::linear_map(mmu::phys_to_virt(_where), _where, map_size, mmu::page_size, mmu::mattr_default, mmu::perm_rwx);
+    //  it does not specify permissions. We are assuming RW for this case.
+    mmu::linear_map(mmu::phys_to_virt(_where), _where, map_size);
     return mmu::phys_to_virt(Where);
 }
 
