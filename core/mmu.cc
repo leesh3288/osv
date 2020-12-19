@@ -1292,8 +1292,6 @@ bool access_fault(vma& vma, unsigned int error_code)
 {
     auto perm = vma.perm();
     if (mmu::is_page_fault_insn(error_code)) {
-        //// DEBUG: NX ////
-        debug_ll("Access fault (NX) at 0x%016lx\n", vma.addr());
         return !(perm & perm_exec);
     }
 
