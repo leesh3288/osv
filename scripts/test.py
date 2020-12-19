@@ -18,7 +18,6 @@ os.environ["LANG"]="C"
 blacklist= [
     "tst-dns-resolver.so",
     "tst-feexcept.so",
-    "tracing_smoke_test",
 ]
 
 qemu_blacklist= [
