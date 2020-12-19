@@ -459,14 +459,17 @@ class linear_page_mapper :
     phys start;
     phys end;
     mattr mem_attr;
+    unsigned int perm;
 public:
-    linear_page_mapper(phys start, size_t size, mattr mem_attr = mattr_default) :
-        start(start), end(start + size), mem_attr(mem_attr) {}
+    // Overloads to allow two default parameters.
+    // Permissions defaults to RW if specified
+    linear_page_mapper(phys start, size_t size, mattr mem_attr = mattr_default, unsigned int perm = mmu::perm_rw) :
+        start(start), end(start + size), mem_attr(mem_attr), perm(perm) {}
     template<int N>
     bool page(hw_ptep<N> ptep, uintptr_t offset) {
         phys addr = start + offset;
         assert(addr < end);
-        ptep.write(make_leaf_pte(ptep, addr, mmu::perm_rwx, mem_attr));
+        ptep.write(make_leaf_pte(ptep, addr, perm, mem_attr));
         return true;
     }
 };
@@ -1841,12 +1844,12 @@ int shm_file::close()
 }
 
 void linear_map(void* _virt, phys addr, size_t size,
-                size_t slop, mattr mem_attr)
+                size_t slop, mattr mem_attr, unsigned int perm)
 {
     uintptr_t virt = reinterpret_cast<uintptr_t>(_virt);
     slop = std::min(slop, page_size_level(nr_page_sizes - 1));
     assert((virt & (slop - 1)) == (addr & (slop - 1)));
-    linear_page_mapper phys_map(addr, size, mem_attr);
+    linear_page_mapper phys_map(addr, size, mem_attr, perm);
     map_range(virt, virt, size, phys_map, slop);
 }
 

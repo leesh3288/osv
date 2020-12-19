@@ -18,6 +18,7 @@ os.environ["LANG"]="C"
 blacklist= [
     "tst-dns-resolver.so",
     "tst-feexcept.so",
+    "tracing_smoke_test",
 ]
 
 qemu_blacklist= [
@@ -29,6 +30,7 @@ firecracker_blacklist= [
     "tcp_close_without_reading_on_qemu"
 ]
 
+"""
 add_tests([
     SingleCommandTest('java_isolated', '/java_isolated.so -cp /tests/java/tests.jar:/tests/java/isolates.jar \
         -Disolates.jar=/tests/java/isolates.jar org.junit.runner.JUnitCore io.osv.AllTestsThatTestIsolatedApp'),
@@ -38,6 +40,7 @@ add_tests([
         org.junit.runner.JUnitCore io.osv.BasicTests !'),
     SingleCommandTest('java-perms', '/java_isolated.so -cp /tests/java/tests.jar io.osv.TestDomainPermissions'),
 ])
+"""
 
 class TestRunnerTest(SingleCommandTest):
     def __init__(self, name):
