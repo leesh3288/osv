@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cassert>
 #include <sys/mman.h>
+#include <osv/debug.h>
 
 
 void test_mmap_success_1()
@@ -89,12 +90,26 @@ void test_kernel_malloc_NX(char *argv[])
     assert(false);
 }
 
+void test_kernel_elf_NX()
+{
+    void *kernel_func_addr = (void*)debug;
+
+    assert(kernel_func_addr != NULL);
+
+    // Write to kernel function and execute.
+    // This succeeds by default. After implementation of W^X, this should fail.
+    *(char*)kernel_func_addr = 0xc3;
+    ((void(*)(const char *))kernel_func_addr)("If function is overwritten, this won't be printed");
+
+    assert(false);
+}
+
 int main(int argc, char *argv[], char *envp[])
 {
     test_mmap_success_1();
     test_mmap_success_2();
     
-    //test_kernel_malloc_NX(argv);
+    test_kernel_elf_NX();
 
     return 0;
 }
