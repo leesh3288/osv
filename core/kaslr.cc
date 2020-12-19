@@ -68,7 +68,6 @@ unsigned long kaslr_get_random_long(void)
 
 void relocate_kernel(void * kern_elf_base)
 {   
-     
     unsigned short PHT_entry_size = ((elf::Elf64_Ehdr *)kern_elf_base)->e_phentsize;
     unsigned short PHT_entry_cnt = ((elf::Elf64_Ehdr *)kern_elf_base)->e_phnum;
     size_t PHT_file_offset = ((elf::Elf64_Ehdr *)kern_elf_base)->e_phoff;
@@ -171,15 +170,62 @@ void relocate_kernel(void * kern_elf_base)
     }
 
     // SHT
-    unsigned short SHT_entry_size = *(unsigned short *)((char *)kern_elf_base + 0x3A);
-    unsigned short SHT_entry_cnt = *(unsigned short *)((char *)kern_elf_base + 0x3C);
-    size_t SHT_file_offset = *(size_t *)((char *)kern_elf_base + 0x28);
+    unsigned short SHT_entry_size = ((elf::Elf64_Ehdr *)kern_elf_base)->e_shentsize;
+    unsigned short SHT_entry_cnt = ((elf::Elf64_Ehdr *)kern_elf_base)->e_shnum;
+    size_t SHT_file_offset = ((elf::Elf64_Ehdr *)kern_elf_base)->e_shoff;
     intptr_t SHT_table = (intptr_t)kern_elf_base + SHT_file_offset;
-
+    unsigned short SH_str_index = ((elf::Elf64_Ehdr *)kern_elf_base)->e_shstrndx;
+    if(SH_str_index > 0xff00){
+        SH_str_index = ((elf::Elf64_Shdr *)SHT_table)->sh_link;
+    }
+    elf::Elf64_Shdr * SH_str_table_entry = (elf::Elf64_Shdr *)((SH_str_index * SHT_entry_size) + SHT_table);
+    char * SH_str_table = (char *)((intptr_t)kern_elf_base + SH_str_table_entry->sh_offset);
     elf::Elf64_Shdr * SHT_curr = (elf::Elf64_Shdr *)SHT_table;
-    while(SHT_entry_cnt > 0){
-        SHT_curr->sh_addr += kaslr_vm_shift;
-        SHT_entry_cnt --;
+
+    //TODO : is max_SHT_entry cnt 0x40?
+    uintptr_t addr_info[0x40][2];
+    unsigned char addr_range_cnt = 0;
+    
+    // get address mapping info
+    for(size_t i = 0 ; i < SHT_entry_cnt; i++){
+        intptr_t addr = SHT_curr->sh_addr;
+        if(addr){
+            addr_info[addr_range_cnt][0] = SHT_curr->sh_addr;
+            addr_info[addr_range_cnt][1] = SHT_curr->sh_addr + SHT_curr->sh_size;
+            addr_range_cnt ++;
+
+            SHT_curr->sh_addr += kaslr_vm_shift;
+        }
+        SHT_curr = (elf::Elf64_Shdr *)((intptr_t)SHT_curr + SHT_entry_size);
+    }
+
+
+    SHT_curr = (elf::Elf64_Shdr *)SHT_table;
+    // patch based on section addr info
+    for(size_t i = 0 ; i < SHT_entry_cnt; i++){
+        if(!strncmp(SH_str_table + SHT_curr->sh_name, ".data.rel", 9)){
+            //do data section patch
+            intptr_t * section_curr = (intptr_t *)SHT_curr->sh_addr;
+            size_t section_size = SHT_curr->sh_size;
+            while(section_size > 0){
+                uintptr_t ptr = *section_curr;
+                //if(ptr < (uintptr_t)kern_elf_base) {
+                //    section_size -= sizeof(intptr_t);
+                //    section_curr ++;
+                //    continue;
+                //}
+
+                for(unsigned char j = 0; j < addr_range_cnt; j++){
+                    if(ptr >= addr_info[j][0] && ptr <= addr_info[j][1]){
+                        *section_curr += kaslr_vm_shift;  
+                        break;
+                    }
+                }
+
+                section_size -= sizeof(intptr_t);
+                section_curr ++;
+            }
+        }
         SHT_curr = (elf::Elf64_Shdr *)((intptr_t)SHT_curr + SHT_entry_size);
     }
 }
