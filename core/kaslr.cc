@@ -1,5 +1,6 @@
 #include <osv/kaslr.hh>
 #include <osv/version.hh>
+#include <osv/elf.hh>
 #include <string.h>
 
 extern size_t kaslr_vm_shift;
@@ -67,68 +68,70 @@ unsigned long kaslr_get_random_long(void)
 
 void relocate_kernel(void * kern_elf_base)
 {   
-    unsigned short PHT_entry_size = *(unsigned short *)((char *)kern_elf_base + 0x36);
-    unsigned short PHT_entry_cnt = *(unsigned short *)((char *)kern_elf_base + 0x38);
-    size_t PHT_file_offset = *(size_t *)((char *)kern_elf_base + 0x20);
-    intptr_t PHT_table = (intptr_t)kern_elf_base + PHT_file_offset;
+     
+    unsigned short PHT_entry_size = ((elf::Elf64_Ehdr *)kern_elf_base)->e_phentsize;
+    unsigned short PHT_entry_cnt = ((elf::Elf64_Ehdr *)kern_elf_base)->e_phnum;
+    size_t PHT_file_offset = ((elf::Elf64_Ehdr *)kern_elf_base)->e_phoff;
+    elf::Elf64_Phdr * PHT_table = (elf::Elf64_Phdr *)((intptr_t)kern_elf_base + PHT_file_offset);
     unsigned char type = 0;
     size_t d_tag, DT_init_arraysz = 0, DT_relasz = 0,  DT_pltrelsz = 0;
     unsigned int DT_symbolcnt = 0;
     intptr_t * DT_init_array = 0, DT_rela = 0 , *DT_pltgot = 0, DT_symtab = 0, *DT_hash = 0;//,* DT_jmprel, DT_strtab;
 
+    //PHT
     for(short i = 0; i < PHT_entry_cnt; i++){
-        *(intptr_t *)(PHT_table + 0x10) += kaslr_vm_shift;
-        type = *(unsigned char *)PHT_table;
+        PHT_table->p_vaddr += kaslr_vm_shift;
+        type = PHT_table->p_type;
         if (type == 2){
             //DYNAMIC
-            intptr_t DT_info = (intptr_t)kern_elf_base + *(size_t *)(PHT_table + 0x8);
-            intptr_t DT_info_curr = DT_info;
+            intptr_t DT_info = (intptr_t)kern_elf_base + PHT_table->p_offset;
+            elf::Elf64_Dyn * DT_info_curr = (elf::Elf64_Dyn *)DT_info;
             size_t DT_entry_size = 0x10;
-            while((d_tag = *(size_t *)DT_info_curr)){
-                if (d_tag == 0x19){ 
+            while((d_tag = DT_info_curr->d_tag)){
+                if (d_tag == elf::DT_INIT_ARRAY){ 
                     // DT_INIT_ARRAY
-                    DT_init_array = *(intptr_t **)(DT_info_curr + 0x8);
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                    DT_init_array = (intptr_t *)DT_info_curr->d_un.d_ptr;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 0x1B){
+                if (d_tag == elf::DT_INIT_ARRAYSZ){
                     //DT_INIT_ARRAYSZ
-                    DT_init_arraysz = *(size_t *)(DT_info_curr + 0x8);
+                    DT_init_arraysz = (size_t)DT_info_curr->d_un.d_val;
                 }
-                if (d_tag == 2){
-                    DT_pltrelsz = *(size_t *)(DT_info_curr + 0x8);
+                if (d_tag == elf::DT_PLTRELSZ){
+                    DT_pltrelsz = (size_t)DT_info_curr->d_un.d_val;
                 }
-                if (d_tag == 3){
-                    DT_pltgot = *(intptr_t **)(DT_info_curr + 0x8);
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                if (d_tag == elf::DT_PLTGOT){
+                    DT_pltgot = (intptr_t *)DT_info_curr->d_un.d_ptr;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 4){
-                    DT_hash = *(intptr_t **)(DT_info_curr + 0x8);
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                if (d_tag == elf::DT_HASH){
+                    DT_hash = (intptr_t *)DT_info_curr->d_un.d_ptr;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 0x6FFFFEF5){
+                if (d_tag == elf::DT_GNU_HASH){
                     // GNU_hash
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 5){
+                if (d_tag == elf::DT_STRTAB){
                 //    DT_strtab = *(intptr_t *)(DT_info_curr + 0x8);
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 6){
-                    DT_symtab = *(intptr_t *)(DT_info_curr + 0x8);
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                if (d_tag == elf::DT_SYMTAB){
+                    DT_symtab = (intptr_t)DT_info_curr->d_un.d_ptr;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 7){
-                    DT_rela = *(intptr_t *)(DT_info_curr + 0x8);
-                    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
+                if (d_tag == elf::DT_RELA){
+                    DT_rela = (intptr_t)DT_info_curr->d_un.d_ptr;
+                    DT_info_curr->d_un.d_ptr += kaslr_vm_shift;
                 }
-                if (d_tag == 8){
-                    DT_relasz = *(size_t *)(DT_info_curr + 0x8);
+                if (d_tag == elf::DT_RELASZ){
+                    DT_relasz = (size_t)DT_info_curr->d_un.d_val;
                 }
                 //if (d_tag == 0x17){
                 //    DT_jmprel = *(intptr_t **)(DT_info_curr + 0x8);
                 //    *(intptr_t *)(DT_info_curr + 0x8) += kaslr_vm_shift;
                 //}
-                DT_info_curr += DT_entry_size;
+                DT_info_curr = (elf::Elf64_Dyn *)((intptr_t)DT_info_curr + DT_entry_size);
             }
 
             // init array patch
@@ -141,28 +144,42 @@ void relocate_kernel(void * kern_elf_base)
 
             // symtbl patch
             DT_symbolcnt = *(unsigned int *)(DT_hash + 0x4);
+            elf::Elf64_Sym * DT_symtab_curr = (elf::Elf64_Sym *)DT_symtab;
             for(size_t j = 0; j < DT_symbolcnt; j++){
-                intptr_t symbol_ptr = (intptr_t)(DT_symtab + j * 0x18);
-                unsigned char st_info = *(char *)(symbol_ptr + 4);
+                unsigned char st_info = DT_symtab_curr->st_info;
                 if (st_info & 0xf0){
                     // global or weak symbol
                     if ((st_info & 0xf) == 2 || (st_info & 0xf) == 1)
                         // object or function
-                        *(intptr_t *)(symbol_ptr + 0x8) += kaslr_vm_shift;
+                        DT_symtab_curr->st_value += kaslr_vm_shift;
                 }
+                DT_symtab_curr = (elf::Elf64_Sym *)((intptr_t)DT_symtab_curr + 0x18);
             }
 
-            intptr_t DT_rela_curr = DT_rela;
+            elf::Elf64_Rela * DT_rela_curr = (elf::Elf64_Rela *)DT_rela;
             // rela patch
             while((uintptr_t)DT_rela_curr < (DT_rela + DT_relasz)){
-                *(size_t *)DT_rela_curr += kaslr_vm_shift;
-                size_t r_info = *(size_t *)(DT_rela_curr + 0x8);
+                DT_rela_curr->r_offset += kaslr_vm_shift;
+                size_t r_info = DT_rela_curr->r_info;
                 if((r_info & 0xff) == 0x25){
-                    *(intptr_t *)(DT_rela_curr + 0x10) += kaslr_vm_shift;
+                    DT_rela_curr->r_addend += kaslr_vm_shift;
                 }
-                DT_rela_curr += 0x18;
+                DT_rela_curr = (elf::Elf64_Rela *)((intptr_t)DT_rela_curr + 0x18);
             } 
         }
-        PHT_table += PHT_entry_size;
+        PHT_table = (elf::Elf64_Phdr *)((intptr_t)PHT_table + PHT_entry_size);
+    }
+
+    // SHT
+    unsigned short SHT_entry_size = *(unsigned short *)((char *)kern_elf_base + 0x3A);
+    unsigned short SHT_entry_cnt = *(unsigned short *)((char *)kern_elf_base + 0x3C);
+    size_t SHT_file_offset = *(size_t *)((char *)kern_elf_base + 0x28);
+    intptr_t SHT_table = (intptr_t)kern_elf_base + SHT_file_offset;
+
+    elf::Elf64_Shdr * SHT_curr = (elf::Elf64_Shdr *)SHT_table;
+    while(SHT_entry_cnt > 0){
+        SHT_curr->sh_addr += kaslr_vm_shift;
+        SHT_entry_cnt --;
+        SHT_curr = (elf::Elf64_Shdr *)((intptr_t)SHT_curr + SHT_entry_size);
     }
 }
