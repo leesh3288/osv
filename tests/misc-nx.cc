@@ -4,6 +4,31 @@
 #include <sys/mman.h>
 
 
+void test_mmap_success_1()
+{
+    void *mmap_addr;
+    
+    mmap_addr = mmap(nullptr, 0x100000, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+    assert(mmap_addr != MAP_FAILED);
+
+    // This must pass.
+    ((char*)mmap_addr)[0xfffff] = 0xc3;
+    ((void(*)())((char*)mmap_addr + 0xfffff))();
+}
+
+void test_mmap_success_2()
+{
+    void *mmap_addr;
+    
+    mmap_addr = mmap(nullptr, 0x100000, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+    assert(mmap_addr != MAP_FAILED);
+
+    // mprotect to create RWX section. This must pass.
+    mprotect((char*)mmap_addr + 0xff000, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC);
+    ((char*)mmap_addr)[0xfffff] = 0xc3;
+    ((void(*)())((char*)mmap_addr + 0xfffff))();
+}
+
 void test_mmap_NX()
 {
     void *mmap_addr;
@@ -66,7 +91,10 @@ void test_kernel_malloc_NX(char *argv[])
 
 int main(int argc, char *argv[], char *envp[])
 {
-    test_kernel_malloc_NX(argv);
+    test_mmap_success_1();
+    test_mmap_success_2();
+    
+    //test_kernel_malloc_NX(argv);
 
     return 0;
 }
