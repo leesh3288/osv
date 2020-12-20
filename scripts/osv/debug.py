@@ -38,7 +38,7 @@ class SymbolResolver(object):
         if show_inline:
             flags += 'i'
         self.addr2line = subprocess.Popen(['addr2line', '-e', object_path, flags],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
         self.cache = {}
 
     def next_line(self):

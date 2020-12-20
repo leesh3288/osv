@@ -795,7 +795,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if getattr(args, 'paginate', False):
-        less_process = subprocess.Popen(['less', '-FX'], stdin=subprocess.PIPE, text=True)
+        less_process = subprocess.Popen(['less', '-FX'], stdin=subprocess.PIPE, universal_newlines=True)
         sys.stdout = less_process.stdin
     else:
         less_process = None
