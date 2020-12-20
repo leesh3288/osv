@@ -136,6 +136,9 @@ int main(int argc, char *argv[], char *envp[])
     test_mmap_success_1();
     test_mmap_success_2();
     
+    test_mmap_NX();
+    //test_malloc_small_NX();
+    //test_malloc_large_NX()
     //test_kernel_malloc_NX(argv);
     //test_internal_thread_stack();
     //test_kernel_elf_NX();

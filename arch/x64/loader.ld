@@ -67,7 +67,7 @@ SECTIONS
 
     . = ALIGN(0x1000);
 
-    .rodata : AT(ADDR(.rodata) - OSV_KERNEL_VM_SHIFT) { *(.rodata*) } :rodata
+    .rodata : AT(ADDR(.rodata) - OSV_KERNEL_VM_SHIFT) { *(.rodata*) } :text
 
     /*******    RO end    *******/
 
@@ -80,32 +80,26 @@ SECTIONS
     .init_array : AT(ADDR(.init_array) - OSV_KERNEL_VM_SHIFT) {
         *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
         *(.init_array .ctors)
-    } :data
+    } :text
     _init_array_end = .;
 
-    .dynamic : AT(ADDR(.dynamic) - OSV_KERNEL_VM_SHIFT) { *(.dynamic) } :dynamic :data
+    .dynamic : AT(ADDR(.dynamic) - OSV_KERNEL_VM_SHIFT) { *(.dynamic) } :dynamic :text
 
-    .data.rel.ro : AT(ADDR(.data.rel.ro) - OSV_KERNEL_VM_SHIFT) { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) } :data
-    .data : AT(ADDR(.data) - OSV_KERNEL_VM_SHIFT) { *(.data) } :data
+    .data.rel.ro : AT(ADDR(.data.rel.ro) - OSV_KERNEL_VM_SHIFT) { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*) } :text
+    .data : AT(ADDR(.data) - OSV_KERNEL_VM_SHIFT) { *(.data) } :text
 
-    /*******   RW end     *******/
-
-
-    /*******  Anon RW section  *******/
-
-    /* Warning - this will go haywire with NX! */
     .tracepoint_patch_sites ALIGN(8) : AT(ADDR(.tracepoint_patch_sites) - OSV_KERNEL_VM_SHIFT) {
         __tracepoint_patch_sites_start = .;
         *(.tracepoint_patch_sites)
         __tracepoint_patch_sites_end = .;
-    } :data
+    } :text
 
     . = ALIGN(8);
     .fixup : AT(ADDR(.fixup) - OSV_KERNEL_VM_SHIFT) {
         fault_fixup_start = .;
         *(.fixup)
         fault_fixup_end = .;
-    } :data
+    } :text
 
     . = ALIGN(4096);
     .percpu : AT(ADDR(.percpu) - OSV_KERNEL_VM_SHIFT) {
@@ -113,17 +107,21 @@ SECTIONS
         *(.percpu)
         . = ALIGN(4096);
         _percpu_end = .;
-    } :data
+    } :text
     .percpu_workers : AT(ADDR(.percpu_workers) - OSV_KERNEL_VM_SHIFT) {
         _percpu_workers_start = .;
         *(.percpu_workers)
         _percpu_workers_end = .;
-    } :data
-
-    /*******    Anon RW end    *******/
+    } :text
 
     . = ALIGN(64);
-    .tdata : AT(ADDR(.tdata) - OSV_KERNEL_VM_SHIFT) { *(.tdata .tdata.* .gnu.linkonce.td.*) } :tls :data
+    .tdata : AT(ADDR(.tdata) - OSV_KERNEL_VM_SHIFT) { *(.tdata .tdata.* .gnu.linkonce.td.*) } :tls :text
+
+    /*******   RW end     *******/
+
+
+    /*******  Anon RW section  *******/
+
     .tbss : AT(ADDR(.tbss) - OSV_KERNEL_VM_SHIFT) {
         *(.tbss .tbss.* .gnu.linkonce.tb.*)
         _pie_static_tls_start = .;
@@ -131,12 +129,15 @@ SECTIONS
         . = . + APP_LOCAL_EXEC_TLS_SIZE;
         . = ALIGN(64);
         _pie_static_tls_end = .;
-    } :tls :data
+    } :tls :text
     .tls_template_size = SIZEOF(.tdata) + SIZEOF(.tbss);
-    .bss : AT(ADDR(.bss) - OSV_KERNEL_VM_SHIFT) { *(.bss .bss.*) } :data
+    .bss : AT(ADDR(.bss) - OSV_KERNEL_VM_SHIFT) { *(.bss .bss.*) } :text
     . = ALIGN(64);
     tcb0 = .;
     . = . + .tls_template_size + 256;
+
+    /*******    Anon RW end    *******/
+
     .edata = .;
     .debug_info 0 : { *(.debug_info .gnu.linkonce.wi.*) }
     .debug_srcinfo 0 : { *(.debug_srcinfo) }
@@ -159,8 +160,6 @@ SECTIONS
 PHDRS {
     headers PT_PHDR PHDRS;
 	text PT_LOAD FILEHDR PHDRS FLAGS(5);
-    data PT_LOAD;
-    rodata PT_LOAD;
 	tls PT_TLS;
 	dynamic PT_DYNAMIC;
 	eh_frame PT_GNU_EH_FRAME;

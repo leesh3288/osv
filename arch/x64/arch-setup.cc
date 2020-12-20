@@ -20,6 +20,7 @@
 #include <string.h>
 #include <osv/boot.hh>
 #include <osv/commands.hh>
+#include <elf.h>
 #include "dmi.hh"
 
 osv_multiboot_info_type* osv_multiboot_info;
@@ -166,7 +167,65 @@ void arch_setup_free_memory()
     // as expressed by the assignment below
     elf_start = reinterpret_cast<void*>(elf_phys_start + OSV_KERNEL_VM_SHIFT);
     elf_size = edata_phys - elf_phys_start;
-    mmu::linear_map(elf_start, elf_phys_start, elf_size, OSV_KERNEL_BASE, mmu::mattr_default, mmu::perm_rwx);  // TODO: granular W^X
+    u64 elf_end = align_up((u64)elf_start + elf_size, mmu::page_size);
+    
+    // Linear mapping with perms.
+    // We can do this the elegant way with segment trees, or the dirty way of maintaining a full array.
+    // Let's go with the latter, since kernel is small enough anyways.
+    const size_t pagecnt = (align_up(elf_size, mmu::page_size) >> mmu::page_size_shift);
+    unsigned int *perms = reinterpret_cast<unsigned int*>(alloca(sizeof(unsigned int) * pagecnt));
+    memset(perms, 0, sizeof(unsigned int) * pagecnt);
+
+    // Ideally, we should use phdrs for program loading.
+    // However this messes up something with segment selector and GDTs, so we resort to parsing shdrs.
+    // This in fact has a positive side-effect of a more fine-grained control over permissions.
+    elf::Elf64_Shdr* shtbl = reinterpret_cast<elf::Elf64_Shdr*>(elf_phys_start + elf_header->e_shoff);
+    u64 shnum = elf_header->e_shnum;
+    if (shnum == SHN_UNDEF) {
+        shnum = shtbl[0].sh_size;
+    }
+    for (unsigned i = 0; i < shnum; ++i) {
+        u64 st = std::max((u64)elf_start, (u64)align_down(shtbl[i].sh_addr, mmu::page_size));
+        u64 en = std::min((u64)elf_end, (u64)align_up(shtbl[i].sh_addr + shtbl[i].sh_size, mmu::page_size));
+        u64 flags = shtbl[i].sh_flags;
+
+        // Does not occupy memory at runtime.
+        if (!(flags & SHF_ALLOC))
+            continue;
+        
+        for (u64 page = st; page < en; page += mmu::page_size) {
+            u64 page_idx = (page - (u64)elf_start) >> mmu::page_size_shift;
+            perms[page_idx] |= mmu::perm_read
+                | ((flags & SHF_WRITE) ? mmu::perm_write : 0)
+                | ((flags & SHF_EXECINSTR) ? mmu::perm_exec : 0);
+        }
+    }
+
+    // Force first page to RX. This is due to GCC mistakenly considering .start32_* sections as writable
+    perms[0] = mmu::perm_rx;
+    for (unsigned i = 0; i < pagecnt; i++)
+        if (perms[i] == 0)  // all unfilled regions considered RW - all sections from .tracepoint_patch_sites to end
+            perms[i] = mmu::perm_rw;
+    
+    u64 c_st = (u64)elf_start;
+    u64 c_perms = perms[0];
+    for (u64 page = (u64)elf_start + mmu::page_size; page < elf_end; page += mmu::page_size)
+    {
+        u64 page_idx = (page - (u64)elf_start) >> mmu::page_size_shift;
+
+        // Current page perms different, create linear map up to (but excluding) current page
+        if (perms[page_idx] != c_perms) {
+            if ((c_perms & (mmu::perm_write | mmu::perm_exec)) == (mmu::perm_write | mmu::perm_exec))
+                abort("W^X violation");
+            mmu::linear_map((void*)c_st, c_st - OSV_KERNEL_VM_SHIFT, page - c_st, mmu::page_size, mmu::mattr_default, c_perms);
+            c_st = page;
+            c_perms = perms[page_idx];
+        }
+    }
+    if ((c_perms & (mmu::perm_write | mmu::perm_exec)) == (mmu::perm_write | mmu::perm_exec))
+        abort("W^X violation");
+    mmu::linear_map((void*)c_st, c_st - OSV_KERNEL_VM_SHIFT, elf_end - c_st, mmu::page_size, mmu::mattr_default, c_perms);
+    
     // get rid of the command line, before low memory is unmapped
     parse_cmdline(mb);
     // now that we have some free memory, we can start mapping the rest
