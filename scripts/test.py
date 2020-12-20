@@ -18,6 +18,11 @@ os.environ["LANG"]="C"
 blacklist= [
     "tst-dns-resolver.so",
     "tst-feexcept.so",
+    # Below are test cases that fail with W^X, due to the use of tracing. This is intended.
+    # Ref: https://github.com/cloudius-systems/osv/issues/651#issuecomment-131447190
+    "tracing_smoke_test",
+    "tst-sampler.so",
+    "tst-small-malloc.so"
 ]
 
 qemu_blacklist= [
