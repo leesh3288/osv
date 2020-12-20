@@ -5,6 +5,8 @@
 #include <osv/sched.hh>
 #include <osv/debug.h>
 
+#define NOT_REACHED abort("FAIL %s\n", __func__)
+
 
 void test_mmap_success_1()
 {
@@ -42,7 +44,7 @@ void test_mmap_NX()
     *(char*)mmap_addr = 0xc3;
     ((void(*)())mmap_addr)();
 
-    assert(false);
+    NOT_REACHED;
 }
 
 void test_malloc_small_NX()
@@ -56,7 +58,7 @@ void test_malloc_small_NX()
     *(char*)malloc_addr = 0xc3;
     ((void(*)())malloc_addr)();
 
-    assert(false);
+    NOT_REACHED;
 }
 
 void test_malloc_large_NX()
@@ -71,7 +73,7 @@ void test_malloc_large_NX()
     *(char*)malloc_addr = 0xc3;
     ((void(*)())malloc_addr)();
 
-    assert(false);
+    NOT_REACHED;
 }
 
 void test_kernel_malloc_NX(char *argv[])
@@ -88,7 +90,7 @@ void test_kernel_malloc_NX(char *argv[])
     *(char*)kernel_malloc_addr = 0xc3;
     ((void(*)())kernel_malloc_addr)();
 
-    assert(false);
+    NOT_REACHED;
 }
 
 void test_internal_thread_stack()
@@ -99,16 +101,18 @@ void test_internal_thread_stack()
 
         assert(stack_addr != NULL);
 
+        printf("internal thread stack: %p\n", stack_addr);
+
         // Write to OSv internal stack and execute.
         // This succeeds by default. After implementation of W^X, this should fail.
         *(volatile char*)stack_addr = 0xc3;
         ((void(*)())stack_addr)();
-
-        assert(false);
     });
 
     th->start();
     th->join();
+
+    NOT_REACHED;
 }
 
 void test_kernel_elf_NX()
@@ -117,12 +121,14 @@ void test_kernel_elf_NX()
 
     assert(kernel_func_addr != NULL);
 
+    printf("debug: %p\n", kernel_func_addr);
+
     // Write to kernel function and execute.
     // This succeeds by default. After implementation of W^X, this should fail.
     *(char*)kernel_func_addr = 0xc3;
     ((void(*)(const char *))kernel_func_addr)("If function is overwritten, this won't be printed");
 
-    assert(false);
+    NOT_REACHED;
 }
 
 int main(int argc, char *argv[], char *envp[])
@@ -131,7 +137,8 @@ int main(int argc, char *argv[], char *envp[])
     test_mmap_success_2();
     
     //test_kernel_malloc_NX(argv);
-    test_internal_thread_stack();
+    //test_internal_thread_stack();
+    //test_kernel_elf_NX();
 
     return 0;
 }
