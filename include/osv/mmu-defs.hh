@@ -42,29 +42,8 @@ constexpr mem_area identity_mapped_areas[] = {
     mem_area::mempool,
 };
 
-constexpr uintptr_t mem_area_size = uintptr_t(1) << 44;
-
-constexpr uintptr_t get_mem_area_base(mem_area area)
-{
-    return 0xffff800000000000 | uintptr_t(area) << 44;
-}
-
-static inline mem_area get_mem_area(void* addr)
-{
-    return mem_area(reinterpret_cast<uintptr_t>(addr) >> 44 & 7);
-}
-
-constexpr void* translate_mem_area(mem_area from, mem_area to, void* addr)
-{
-    return static_cast<void*>(static_cast<char*>(addr)
-                              - get_mem_area_base(from) + get_mem_area_base(to));
-}
-
-constexpr uintptr_t main_mem_area_base = get_mem_area_base(mem_area::main);
-static char* const phys_mem = reinterpret_cast<char*>(main_mem_area_base);
-// area for debug allocations:
-constexpr uintptr_t debug_mem_area_base = get_mem_area_base(mem_area::debug);
-static char* const debug_base = reinterpret_cast<char*>(debug_mem_area_base);
+constexpr unsigned char mem_area_size_bit = 40;
+constexpr uintptr_t mem_area_size = uintptr_t(1) << mem_area_size_bit;
 
 enum {
     perm_read = 1,

@@ -15,6 +15,7 @@
 #include <osv/prio.hh>
 #include <osv/elf.hh>
 #include "exceptions.hh"
+#include <osv/kaslr.hh>
 
 void page_fault(exception_frame *ef)
 {
@@ -44,6 +45,47 @@ void page_fault(exception_frame *ef)
 }
 
 namespace mmu {
+
+char* phys_mem;
+// area for debug allocations:
+char* debug_base;
+
+static uintptr_t physmap_base = 0xffff800000000000;
+
+uintptr_t get_mem_area_base(mem_area area)
+{
+    return physmap_base | uintptr_t(area) << mem_area_size_bit;
+}
+
+mem_area get_mem_area(void* addr)
+{ 
+    // (1 << mempool type cnt bit) - 1 == 3
+    return mem_area(reinterpret_cast<uintptr_t>(addr) >> mem_area_size_bit & 3);
+}
+
+void* translate_mem_area(mem_area from, mem_area to, void* addr)
+{
+    return static_cast<void*>(static_cast<char*>(addr)
+                              - get_mem_area_base(from) + get_mem_area_base(to));
+}
+
+void init_mem_bases(void){
+    //uintptr_t new_physmap_base = physmap_base;
+    // address size bit - memory area size bit - mempool type cnt bit
+    unsigned long aslr_mask = (1UL << (48 - mem_area_size_bit - 2)) - 1;
+    unsigned long aslr_addened = (kaslr_get_random_long() & aslr_mask);
+    // should have 1 ~ 2 ** (aslr bit)
+    if(aslr_addened == 0) aslr_addened = 1;
+
+    physmap_base |= aslr_addened << (mem_area_size_bit + 2);
+    //debug_early_u64("physmap_base ", physmap_base);
+
+    uintptr_t main_mem_area_base = get_mem_area_base(mem_area::main);
+    phys_mem = reinterpret_cast<char*>(main_mem_area_base);
+    // area for debug allocations:
+    uintptr_t debug_mem_area_base = get_mem_area_base(mem_area::debug);
+    debug_base = reinterpret_cast<char*>(debug_mem_area_base);
+}
 
 uint8_t phys_bits = max_phys_bits, virt_bits = 52;
 

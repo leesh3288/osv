@@ -101,6 +101,8 @@ void premain()
        without depending on prior initialization. */
     debug_early("OSv " OSV_VERSION "\n");
 
+    mmu::init_mem_bases();  
+
     arch_init_premain();
 
     auto inittab = elf::get_init(reinterpret_cast<elf::Elf64_Ehdr*>(

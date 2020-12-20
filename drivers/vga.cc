@@ -12,9 +12,6 @@
 
 namespace console {
 
-volatile unsigned short * const VGAConsole::_buffer
-= reinterpret_cast<volatile unsigned short *>(mmu::phys_mem + 0xb8000);
-
 static void tsm_log_cb(void *data, const char *file, int line, const char *func,
     const char *subs, unsigned int sev, const char *format, va_list args)
 {
@@ -67,6 +64,7 @@ VGAConsole::VGAConsole(pci::device& pci_dev)
     , _offset()
     , _offset_dirty(false)
 {
+    _buffer = reinterpret_cast<unsigned short *>(mmu::phys_mem + 0xb8000);
     tsm_screen_new(&_tsm_screen, tsm_log_cb, this);
     tsm_screen_resize(_tsm_screen, NCOLS, NROWS);
     tsm_screen_set_max_sb(_tsm_screen, 1024);

@@ -47,7 +47,7 @@ private:
     };
     pci::device& _pci_dev;
     unsigned _col = 0;
-    static volatile unsigned short * const _buffer;
+    unsigned short * _buffer;
     struct tsm_screen *_tsm_screen;
     struct tsm_vte *_tsm_vte;
     Keyboard *_kbd;

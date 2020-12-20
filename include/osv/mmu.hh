@@ -30,6 +30,19 @@ typedef std::shared_ptr<balloon> balloon_ptr;
  */
 namespace mmu {
 
+extern char* phys_mem;
+// area for debug allocations:
+extern char* debug_base;
+
+
+uintptr_t get_mem_area_base(mem_area area);
+
+mem_area get_mem_area(void* addr);
+
+void* translate_mem_area(mem_area from, mem_area to, void* addr);
+
+void init_mem_bases(void);
+
 // when we know it was dynamically allocated
 inline phys virt_to_phys_dynamic_phys(void* virt)
 {
