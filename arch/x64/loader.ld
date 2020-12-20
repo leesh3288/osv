@@ -158,7 +158,6 @@ SECTIONS
     .comment : { *(.comment) }
 }
 PHDRS {
-    headers PT_PHDR PHDRS;
 	text PT_LOAD FILEHDR PHDRS FLAGS(5);
 	tls PT_TLS;
 	dynamic PT_DYNAMIC;
