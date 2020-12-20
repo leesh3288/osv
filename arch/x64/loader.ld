@@ -158,7 +158,7 @@ SECTIONS
 }
 PHDRS {
     headers PT_PHDR PHDRS;
-	text PT_LOAD FILEHDR PHDRS;
+	text PT_LOAD FILEHDR PHDRS FLAGS(5);
     data PT_LOAD;
     rodata PT_LOAD;
 	tls PT_TLS;
