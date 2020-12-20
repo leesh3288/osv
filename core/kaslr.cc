@@ -1,5 +1,5 @@
 #include <osv/kaslr.hh>
-#include <osv/version.hh>
+#include <osv/version.h> 
 #include <string.h>
 
 
@@ -21,7 +21,7 @@ static unsigned long rotate_xor(unsigned long hash, const void *area,
 static unsigned long get_boot_seed(void)
 {
 	unsigned long hash = 0;
-    const char * version_str = osv::version().c_str();
+    const char * version_str = OSV_VERSION;
 	hash = rotate_xor(hash, version_str, strlen(version_str));
 	//TODO : add more entropy source such as boot_param or loader_argv
 	return hash;
