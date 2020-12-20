@@ -215,14 +215,14 @@ void arch_setup_free_memory()
 
         // Current page perms different, create linear map up to (but excluding) current page
         if (perms[page_idx] != c_perms) {
-            if ((c_perms & (mmu::perm_write | mmu::perm_exec)) == (mmu::perm_write | mmu::perm_exec))
+            if ((c_perms & mmu::perm_write) && (c_perms & mmu::perm_exec))
                 abort("W^X violation");
             mmu::linear_map((void*)c_st, c_st - OSV_KERNEL_VM_SHIFT, page - c_st, mmu::page_size, mmu::mattr_default, c_perms);
             c_st = page;
             c_perms = perms[page_idx];
         }
     }
-    if ((c_perms & (mmu::perm_write | mmu::perm_exec)) == (mmu::perm_write | mmu::perm_exec))
+    if ((c_perms & mmu::perm_write) && (c_perms & mmu::perm_exec))
         abort("W^X violation");
     mmu::linear_map((void*)c_st, c_st - OSV_KERNEL_VM_SHIFT, elf_end - c_st, mmu::page_size, mmu::mattr_default, c_perms);
     
