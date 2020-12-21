@@ -84,6 +84,12 @@ int main(int argc, char **argv)
     expect(perm(addr) & mmu::perm_write, 0u);
     expect(perm(addr) & mmu::perm_exec, static_cast<unsigned int>(mmu::perm_exec));
 
+    // 8. Test OSv writable section W^X
+    // Randomly chosen variable, replaceable with any writable section
+    addr = (void*)&mmu::phys_mem;
+    expect(perm(addr) & mmu::perm_write, static_cast<unsigned int>(mmu::perm_write));
+    expect(perm(addr) & mmu::perm_exec, 0u);
+
     std::cout << "SUMMARY: " << tests << " tests, " << fails << " failures\n";
     return fails == 0 ? 0 : 1;
 }
