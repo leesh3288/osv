@@ -158,7 +158,7 @@ SECTIONS
     .comment : { *(.comment) }
 }
 PHDRS {
-	text PT_LOAD FILEHDR PHDRS FLAGS(5);
+	text PT_LOAD FILEHDR PHDRS;
 	tls PT_TLS;
 	dynamic PT_DYNAMIC;
 	eh_frame PT_GNU_EH_FRAME;
