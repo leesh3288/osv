@@ -57,6 +57,7 @@ void arch_init_premain();
 void arch_setup_tls(void *tls, const elf::tls_data& info);
 
 void arch_setup_free_memory();
+void arch_mprotect_kernel();
 void arch_init_drivers();
 bool arch_setup_console(std::string opt_console);
 

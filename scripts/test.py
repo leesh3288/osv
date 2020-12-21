@@ -19,11 +19,6 @@ os.environ["LANG"]="C"
 blacklist= [
     "tst-dns-resolver.so",
     "tst-feexcept.so",
-    # Below are test cases that fail with W^X, due to the use of tracing. This is intended.
-    # Ref: https://github.com/cloudius-systems/osv/issues/651#issuecomment-131447190
-    "tracing_smoke_test",
-    "tst-sampler.so",
-    "tst-small-malloc.so"
 ]
 
 qemu_blacklist= [
@@ -33,6 +28,17 @@ qemu_blacklist= [
 firecracker_blacklist= [
     "tracing_smoke_test",
     "tcp_close_without_reading_on_qemu"
+]
+
+# Below are test cases that fail with W^X, due to the use of runtime tracepoint addition.
+# Since usage of runtime tracepoints might be useful in development or profiling,
+#  this feature is revived with --runtime-tracepoint by mapping kernel binary as RWX.
+# Ref: https://github.com/cloudius-systems/osv/issues/651#issuecomment-131447190
+# Note that "tracing_smoke_test" uses tracing with --trace argument but does not require
+#  RWX mappings. This is because loader re-maps kernel with W^X by default.
+require_runtime_tracepoint_list= [
+    "tst-sampler.so",
+    "tst-small-malloc.so"
 ]
 
 """
@@ -49,7 +55,9 @@ add_tests([
 
 class TestRunnerTest(SingleCommandTest):
     def __init__(self, name):
-        super(TestRunnerTest, self).__init__(name, '/tests/%s' % name)
+        super(TestRunnerTest, self).__init__(name,
+            ('--runtime-tracepoint ' if name in require_runtime_tracepoint_list else '') + 
+            '/tests/%s' % name)
 
 # Not all files in build/release/tests/tst-*.so may be on the test image
 # (e.g., some may have actually remain there from old builds) - so lets take
@@ -95,6 +103,8 @@ def is_not_skipped(test):
 def run_tests_in_single_instance():
     run([test for test in tests if not isinstance(test, TestRunnerTest)])
 
+    # Forfeit testcases requiring runtime tracepoint addition feature in case of single instance test.
+    blacklist.append(require_runtime_tracepoint_list)
     blacklist_tests = ' '.join(blacklist)
     args = run_py_args + ["-s", "-e", "/testrunner.so -b %s" % (blacklist_tests)]
     if subprocess.call(["./scripts/run.py"] + args):

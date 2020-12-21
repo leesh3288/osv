@@ -147,6 +147,7 @@ static std::string opt_defaultgw;
 static std::string opt_nameserver;
 static std::string opt_redirect;
 static std::chrono::nanoseconds boot_delay;
+static bool opt_runtime_tracepoint = false;
 std::vector<mntent> opt_mount_fs;
 bool opt_maxnic = false;
 int maxnic;
@@ -185,7 +186,8 @@ static void usage()
     std::cout << "  --disable_rofs_cache  disable ROFS memory cache\n";
     std::cout << "  --nopci               disable PCI enumeration\n";
     std::cout << "  --extra-zfs-pools     import extra ZFS pools\n";
-    std::cout << "  --mount-fs=arg        mount extra filesystem, format:<fs_type,url,path>\n\n";
+    std::cout << "  --mount-fs=arg        mount extra filesystem, format:<fs_type,url,path>\n";
+    std::cout << "  --runtime-tracepoint  allow adding tracepoints at runtime by mapping kernel as RWX\n\n";
 }
 
 static void handle_parse_error(const std::string &message)
@@ -249,6 +251,11 @@ static void parse_options(int loader_argc, char** loader_argv)
 
     if (extract_option_flag(options_values, "bootchart")) {
         opt_bootchart = true;
+    }
+
+    if (extract_option_flag(options_values, "runtime-tracepoint")) {
+        printf("Runtime tracepoint features added. This abandons W^X and instead maps kernel binary as RWX.\n");
+        opt_runtime_tracepoint = true;
     }
 
     if (options::option_value_exists(options_values, "trace")) {
@@ -597,6 +604,10 @@ void main_cont(int loader_argc, char** loader_argv)
     debug("Firmware vendor: %s\n", osv::firmware_vendor().c_str());
 
     parse_options(loader_argc, loader_argv);
+
+    if (!opt_runtime_tracepoint) {
+        arch_mprotect_kernel();
+    }
 
     if (opt_random) {
         randomdev::randomdev_init();
