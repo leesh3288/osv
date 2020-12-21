@@ -8,6 +8,7 @@ import os
 
 import tests.test_net
 import tests.test_tracing
+import tests.test_aslr
 
 from operator import attrgetter
 from tests.testing import *
