@@ -874,6 +874,27 @@ find_intersecting_vma(uintptr_t addr) {
     }
 }
 
+unsigned int get_pte_perm(void *addr) {
+    struct fetch_perm : public virt_pte_visitor {
+        unsigned int perm = 0u;
+        
+        void pte(pt_element<0> pte) override {
+            perm = (pte.valid() ? perm_read : 0) |
+                (pte.writable() ? perm_write : 0) |
+                (pte.executable() ? perm_exec : 0);
+        }
+        void pte(pt_element<1> pte) override {
+            perm = (pte.valid() ? perm_read : 0) |
+                (pte.writable() ? perm_write : 0) |
+                (pte.executable() ? perm_exec : 0);
+        }
+    } visitor;
+
+    virt_visit_pte_rcu((uintptr_t)addr, visitor);
+
+    return visitor.perm;
+}
+
 // Find the list of vmas which intersect a given address range. Because the
 // vmas are sorted in vma_list, the result is a consecutive slice of vma_list,
 // [first, second), between the first returned iterator (inclusive), and the

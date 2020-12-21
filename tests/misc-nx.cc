@@ -111,6 +111,7 @@ void test_internal_thread_stack()
 
     th->start();
     th->join();
+    delete th;
 
     NOT_REACHED;
 }

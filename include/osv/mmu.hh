@@ -34,6 +34,7 @@ extern char* phys_mem;
 // area for debug allocations:
 extern char* debug_base;
 
+unsigned int get_pte_perm(void *addr);
 
 uintptr_t get_mem_area_base(mem_area area);
 
