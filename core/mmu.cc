@@ -461,8 +461,7 @@ class linear_page_mapper :
     mattr mem_attr;
     unsigned int perm;
 public:
-    // Overloads to allow two default parameters.
-    // Permissions defaults to RW if specified
+    // Permissions defaults to RW if not specified
     linear_page_mapper(phys start, size_t size, mattr mem_attr = mattr_default, unsigned int perm = mmu::perm_rw) :
         start(start), end(start + size), mem_attr(mem_attr), perm(perm) {}
     template<int N>
