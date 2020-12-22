@@ -77,8 +77,8 @@ int main(int argc, char **argv)
     expect_w(addr);
     expect_nx(addr);
 
-    *(u8*)addr = u8(0xc3); // ret
-    *(u8*)((uintptr_t)addr + mmu::pt_level_traits<0>::size::value) = u8(0xaa);
+    *(volatile u8*)addr = u8(0xc3); // ret
+    *(volatile u8*)((uintptr_t)addr + mmu::pt_level_traits<0>::size::value) = u8(0xaa);
 
     // 4.1 mprotect partial mmaped range
     expect(mprotect(addr, mmu::pt_level_traits<0>::size::value, PROT_READ|PROT_EXEC), 0);
@@ -99,8 +99,8 @@ int main(int argc, char **argv)
     expect_w(addr);
     expect_x(addr);
 
-    ((u8*)addr)[0] = u8(0x90);  // nop
-    ((u8*)addr)[1] = u8(0xc3);  // ret
+    ((volatile u8*)addr)[0] = u8(0x90);  // nop
+    ((volatile u8*)addr)[1] = u8(0xc3);  // ret
     ((void(*)())addr)();
 
     expect(munmap(addr, mmu::pt_level_traits<1>::size::value), 0);

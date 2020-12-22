@@ -16,7 +16,7 @@ void test_mmap_success_1()
     assert(mmap_addr != MAP_FAILED);
 
     // This must pass.
-    ((char*)mmap_addr)[0xfffff] = 0xc3;
+    ((volatile char*)mmap_addr)[0xfffff] = 0xc3;
     ((void(*)())((char*)mmap_addr + 0xfffff))();
 }
 
@@ -29,7 +29,7 @@ void test_mmap_success_2()
 
     // mprotect to create RWX section. This must pass.
     mprotect((char*)mmap_addr + 0xff000, 0x1000, PROT_READ|PROT_WRITE|PROT_EXEC);
-    ((char*)mmap_addr)[0xfffff] = 0xc3;
+    ((volatile char*)mmap_addr)[0xfffff] = 0xc3;
     ((void(*)())((char*)mmap_addr + 0xfffff))();
 }
 
@@ -41,7 +41,7 @@ void test_mmap_NX()
     assert(mmap_addr != MAP_FAILED);
     
     // NX fault in mmaped region. This fails by default.
-    *(char*)mmap_addr = 0xc3;
+    *(volatile char*)mmap_addr = 0xc3;
     ((void(*)())mmap_addr)();
 
     NOT_REACHED;
@@ -55,7 +55,7 @@ void test_malloc_small_NX()
     assert(malloc_addr != NULL);
 
     // NX fault in small malloc region. This fails by default.
-    *(char*)malloc_addr = 0xc3;
+    *(volatile char*)malloc_addr = 0xc3;
     ((void(*)())malloc_addr)();
 
     NOT_REACHED;
@@ -70,7 +70,7 @@ void test_malloc_large_NX()
 
     // NX fault in large malloc region, which will likely be allocated by mmap.
     // This fails by default.
-    *(char*)malloc_addr = 0xc3;
+    *(volatile char*)malloc_addr = 0xc3;
     ((void(*)())malloc_addr)();
 
     NOT_REACHED;
@@ -87,7 +87,7 @@ void test_kernel_malloc_NX(char *argv[])
     // NX fault in kernel malloc region, allocated using linear mapper.
     // Since kernel malloc() is not exposed, we use argv which is allocated from kernel malloc().
     // This succeeds by default. After implementation of W^X, this should fail.
-    *(char*)kernel_malloc_addr = 0xc3;
+    *(volatile char*)kernel_malloc_addr = 0xc3;
     ((void(*)())kernel_malloc_addr)();
 
     NOT_REACHED;
@@ -126,7 +126,7 @@ void test_kernel_elf_NX()
 
     // Write to kernel function and execute.
     // This succeeds by default. After implementation of W^X, this should fail.
-    *(char*)kernel_func_addr = 0xc3;
+    *(volatile char*)kernel_func_addr = 0xc3;
     ((void(*)(const char *))kernel_func_addr)("If function is overwritten, this won't be printed");
 
     NOT_REACHED;
